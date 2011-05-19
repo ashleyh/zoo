@@ -29,21 +29,21 @@ directory layout
 the directory layout should look something like this:
 
 * compd - compile daemon thingy
-  * compilers - the compiler binaries, currently omitted here because they're enormous
-    * llvm-2.9
-    * mono-2.10.2
-    * tcc-0.9.25
-  * dash
-    * bin
-      * aa-check: used to check the sandbox
-      * cat, dash, echo, env, mktemp, rm
-  * drivers - these are dash scripts which read code from stdin, compile and run it and put the output on stdout
-  * server - the server thingy, written in go
+ * compilers - the compiler binaries, currently omitted here because they're enormous
+  * llvm-2.9
+  * mono-2.10.2
+  * tcc-0.9.25
+ * dash
+  * bin
+   * aa-check: used to check the sandbox
+   * cat, dash, echo, env, mktemp, rm
+ * drivers - these are dash scripts which read code from stdin, compile and run it and put the output on stdout
+ * server - the server thingy, written in go
 * webapp - the web app thingy
-  * static - static content
-    * js/ace - from ace.ajax.org
-  * templates - jinja templates
-  * tools - currently contains a thing for bundling together code skeletons into a json thing
+ * static - static content
+  * js/ace - from ace.ajax.org
+ * templates - jinja templates
+ * tools - currently contains a thing for bundling together code skeletons into a json thing
 
 license
 =======
