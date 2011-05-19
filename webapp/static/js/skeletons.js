@@ -1,0 +1,1 @@
+var skeletons = {"cpp": "#include <iostream>\nusing namespace std;\n\nint main(int argc, char** argv) {\n    cout << \"hello\" << endl;\n}", "python": "def main():\n    print \"Hello\"\n\nif __name__ == \"__main__\":\n    main()", "c": "#include <stdio.h>\n\nint main(int argc, char** argv) {\n    puts(\"hello\");\n}", "csharp": "i don't know csharpo"}

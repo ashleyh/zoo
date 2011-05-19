@@ -1,0 +1,358 @@
+<!doctype html>
+{#
+ edit.html - jinja template for the editor
+ 
+ Copyright 2011 Ashley Hewson
+ 
+ This file is part of Compiler Zoo.
+ 
+ Compiler Zoo is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ 
+ Compiler Zoo is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ 
+ You should have received a copy of the GNU General Public License
+ along with Compiler Zoo.  If not, see <http:www.gnu.org/licenses/>.
+#}
+<html>
+    <head>
+        <title>compiler zoo</title>
+        <link rel="stylesheet" type="text/css" href="/static/css/layout-default.css" />
+        <script src="/static/js/ace/ace.js" type="text/javascript"></script>
+        <script src="/static/js/ace/mode-c_cpp.js" type="text/javascript"></script>
+        <script src="/static/js/ace/mode-csharp.js" type="text/javascript"></script>
+        <script src="/static/js/ace/mode-python.js" type="text/javascript"></script>
+        <script src="/static/js/ace/theme-cobalt.js" type="text/javascript"></script>
+        <script src="/static/js/jquery.js" type="text/javascript"></script>
+        <script src="/static/js/jquery-ui.js" type="text/javascript"></script>
+        <script src="/static/js/jquery.layout.js" type="text/javascript"></script>
+        <script type="text/javascript">
+
+            var editor = null
+            var editorFresh = true
+            var currentID = {{ currentID|tojson|safe }}
+
+
+            var languages = {
+                c: {
+                    displayName: 'C',
+                    editorMode: require('ace/mode/c_cpp').Mode,
+                    drivers: ['tcc', 'clang', 'gcc']
+                },
+                cpp: {
+                    displayName: 'C++',
+                    editorMode: require('ace/mode/c_cpp').Mode,
+                    drivers: ['clang-cpp', 'gpp']
+                },
+                //clojure
+                //coffee
+                csharp: {
+                    displayName: 'C#',
+                    editorMode: require('ace/mode/csharp').Mode,
+                    drivers: ['mcs']
+                },
+                //java
+                //javascript
+                //ocaml
+                //perl
+                //php
+                python: {
+                    displayName: 'Python',
+                    editorMode: require('ace/mode/python').Mode,
+                    drivers: ['pypy', 'cpython']
+                }
+                //ruby
+            }
+
+            // others to add:
+            // erlang
+            // haskell
+            // lua
+            // scheme
+            // d
+            // f#
+            // go
+            // groovy
+            // haxe
+            // io
+            // scala
+            // vala
+
+           
+            var defaultLanguage = {{ defaultLanguage|tojson|safe }}
+            var defaultDriver = {{ defaultDriver|tojson|safe }}
+
+
+            function setupSelects() {
+                var sel = $('select#language')
+
+                for (var shortname in languages) {
+                    var language = languages[shortname]
+                    sel.append(
+                        $('<option/>')
+                            .attr('value', shortname)
+                            .text(language.displayName)
+                        )
+                }
+                
+
+                sel.change(function() {
+                    var shortname = sel.val()
+                    var language = languages[shortname]
+                    var drivers = $('select#driver')
+                    drivers.empty()
+    
+                    for (var i in language.drivers) {
+                        drivers.append(
+                            $('<option/>').text(language.drivers[i])
+                        )
+                    }
+
+                    editor.getSession().setMode(new language.editorMode())
+                })
+
+                sel.val(defaultLanguage)
+                sel.change()
+
+            }
+
+            function setResult(result) {
+                $('#result').text(result).show()
+            }
+
+            function setEditorFresh(fresh) {
+                editorFresh = fresh
+            }
+
+            function setCurrentID(id) {
+                currentID = id
+                loadRevisionHistory()
+            }
+
+
+            function run() {
+                var language = $('select#language').val()
+                var driver = $('select#driver').val()
+
+
+                console.log('run')
+                var source = editor.getSession().getDocument().getValue()
+                
+                $('#result').hide()
+                $('#throbber').show()
+                $.post(
+                    '/compile',
+                    {
+                        predecessor: currentID,
+                        language: language,
+                        driver: driver,
+                        source: source
+                    },
+                    function (data, status) {
+                        console.log("callback", data)
+                        setResult(data.result)
+                        $('#throbber').hide()
+                        setCurrentID(data.snippet._id)
+                    },
+                    'json'
+                )
+
+            }
+
+            var outerLayout, innerLayout
+
+            function resizeEditor() {
+                $('#editor').width($('#layout-center-center').innerWidth())
+                $('#editor').height($('#layout-center-center').innerHeight())
+                editor.resize()
+            }
+
+            function setupLayout() {
+                outerLayout = $('body').layout({
+                    name: 'outer',
+                    west__paneSelector: '#layout-west',
+                    west__closable: true,
+                    west__resizable: false,
+                    west__size: 200,
+                    center__paneSelector: '#layout-center',
+                    center__onresize: 'innerLayout.resizeAll',
+                    //applyDefaultStyles: true
+                })
+                innerLayout = $('#layout-center').layout({
+                    center__paneSelector: '#layout-center-center',
+                    center__size: '50%',
+                    center__onresize: 'resizeEditor',
+                    south__paneSelector: '#layout-center-south',
+                    south__size: '50%',
+                    south__maxSize: '75%',
+                    south__resizable: true,
+                    //applyDefaultStyles: true
+                })
+                resizeEditor()
+            }
+                
+            function setupEditor() {
+                editor = ace.edit('editor')
+                editor.setTheme('ace/theme/cobalt')
+                var canon = require('pilot/canon')
+
+                canon.addCommand({
+                    name: 'run',
+                    bindKey: {
+                        win: 'Ctrl-G|F5|Ctrl-Enter',
+                        mac: 'Command-G',
+                        sender: 'editor'
+                    },
+                    exec: function(env, args, request) {
+                        run()
+                    }
+                })
+                editor.getSession().on(
+                    'change',
+                    function() {
+                        setEditorFresh(false)
+                    }
+                )
+            }
+
+            function loadRevisionHistory() {
+                if (currentID != '') {
+                    $('#revisions').load('/history/' + currentID)
+                }
+            }
+
+
+
+            $(function() {
+
+                setupEditor()
+                setupLayout()
+                setupSelects()
+
+                $('button#run').click(
+                    function() {
+                        run()
+                    }
+                )
+
+                loadRevisionHistory()
+
+            })
+        </script>
+        <style type="text/css">
+            body {
+                font-family: "Droid Sans", sans;
+            }
+            #layout-west {
+                padding: 5px;
+            }
+            #layout-center {
+                padding: 0;
+            }
+            #layout-center-center {
+                padding: 0;
+            }
+            #editor {
+                width: 100%;
+                height: 100%;
+                /*font-size: 120%;*/
+            }
+
+            #result {
+                font-size: 120%;
+                font-family: "Droid Sans Mono";
+                overflow: auto;
+            }
+            #throbber {
+                border: 1px solid black;
+                width: 200px;
+                height: 60px;
+                margin-left: -100px;
+                margin-top: -30px;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                text-align: center;
+                line-height: 60px;
+            }
+            .hidden {
+                display: none;
+            }
+            ul {
+                margin: 3px;
+            }
+            .highlight {
+                color: orange;
+            }
+
+            .fieldGroup label {
+                width: 80px;
+                display: inline-block;
+                margin: 0;
+            }
+            
+            .fieldGroup select {
+                width: 110px;
+                margin: 0;
+            }
+
+            .fieldSet {
+                width: 190px;
+                padding: 0;
+                margin: 0;
+            }
+            pre {
+                margin: 0;
+            }
+
+        </style>
+    </head>
+    <body>
+        <div id="layout-west">
+            <div class="fieldSet">
+                <div class="fieldGroup">
+                    <label for="language">language</label><select id="language">....</select>
+                </div>
+                <div class="fieldGroup">
+                    <label for="driver">driver</label><select id="driver">....</select>
+                </div>
+
+                <button id="run">run</button>
+            </div>
+                
+            <div id="languageOptions"></div>
+            keybindings
+            <dl>
+                <dt>C-G</dt>
+                <dt>C-R</dt>
+                <dt>C-enter</dt>
+                <dt>D-G</dt>
+                <dd>run</dd>
+            </dl>
+
+            revision history:
+            <div id="revisions"></div>
+            descendants: see
+            <a href="/treeoflife">tree of life</a>
+
+        </div>
+
+        <div id="layout-center">
+            <div id="layout-center-center">
+                <div id="editor">{{ source }}</div>
+            </div>
+            <div id="layout-center-south">
+                <div id="throbber" class="hidden">
+                    <img src="/static/throbber.gif" />
+                    Hold your horses
+                </div>
+                <pre id="result">result</pre>
+            </div>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,7 @@
+#!dontrunme
+export PATH=${ZOO_ROOT}/dash/bin:${ZOO_ROOT}/compilers/clang+llvm-2.9-x86_64-linux.tar/bin/
+if ! aa-check ; then
+    echo refusing to run outside of jail
+    exit
+fi
+clang -o - -c -emit-llvm -x c++ - | lli

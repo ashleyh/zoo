@@ -1,0 +1,16 @@
+# Last Modified: Mon May  2 14:11:34 2011
+#include <tunables/global>
+
+@{zoo_root} = /path/to/zoo
+
+/path/to/zoo/compd/dash/bin/dash {
+  #include <abstractions/base>
+  @{zoo_root}/dash/bin/* mrix,
+  @{zoo_root}/drivers/* r,
+  @{zoo_root}/compilers/** mrix,
+  @{zoo_root}/scratch/** rw,
+  /usr/include/** r,
+  set rlimit nproc <= 500,
+  set rlimit data <= 500M,
+  /proc/*/attr/current r,
+}

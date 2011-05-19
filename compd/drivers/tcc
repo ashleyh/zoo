@@ -1,0 +1,7 @@
+#!dontrunme
+export PATH=${ZOO_ROOT}/dash/bin:${ZOO_ROOT}/compilers/tcc-0.9.25
+if ! aa-check ; then
+    echo refusing to run outside of jail
+    exit
+fi
+tcc -I${ZOO_ROOT}/compilers/tcc-0.9.25/include -run - 
