@@ -114,6 +114,11 @@
                     }
 
                     editor.getSession().setMode(new language.editorMode())
+                    setEditorFresh(false)
+                })
+
+                $('select#driver').change(function() {
+                    setEditorFresh(false)
                 })
 
                 sel.val(defaultLanguage)
@@ -127,6 +132,11 @@
 
             function setEditorFresh(fresh) {
                 editorFresh = fresh
+                if (editorFresh) {
+                    $('#savewarning').hide()
+                } else {
+                    $('#savewarning').show()
+                }
             }
 
             function setCurrentID(id) {
@@ -134,32 +144,86 @@
                 loadRevisionHistory()
             }
 
+            function wrappedAjax(message, args) {
+                console.log(message, 'start')
+                var ajax = $.ajax(args)
+                    .success(function () {
+                        console.log(message, 'success')
+                    })
+                    .error(function () {
+                        console.log(message, 'failure')
+                    })
+                return ajax
+            }
 
-            function run() {
+            function save() {
+                if (editorFresh) {
+                    return
+                }
+
                 var language = $('select#language').val()
                 var driver = $('select#driver').val()
-
-
-                console.log('run')
                 var source = editor.getSession().getDocument().getValue()
+
+                return wrappedAjax(
+                    'saving',
+                    {
+                        url: '/save',
+                        data: {
+                            predecessor: currentID,
+                            language: language,
+                            driver: driver,
+                            source: source
+                        },
+                        timeout: 10000,
+                        success: function (data, status) {
+                            console.log('save', data)
+                            setCurrentID(data['_id'])
+                            setEditorFresh(true)
+                        },
+                        dataType: 'json',
+                        type: 'post'
+                    }
+                )
+            }
+
+            function saveAndRun() {
+                if (editorFresh) {
+                    return run()
+                } else {
+                    return save().pipe(
+                        function (saveData) {
+                            // don't actually need to pass any data
+                            // through to run()
+                            return run()
+                        }
+                    )
+                }
+            }
+
+            function run() {
+                console.log('compile', currentID)
+                if (currentID == '') {
+                    return null
+                }
                 
                 $('#result').hide()
                 $('#throbber').show()
-                $.post(
-                    '/compile',
+                return wrappedAjax(
+                    'compiling',
                     {
-                        predecessor: currentID,
-                        language: language,
-                        driver: driver,
-                        source: source
-                    },
-                    function (data, status) {
-                        console.log("callback", data)
-                        setResult(data.result)
-                        $('#throbber').hide()
-                        setCurrentID(data.snippet._id)
-                    },
-                    'json'
+                        url: '/compile',
+                        data: {
+                            id: currentID
+                        },
+                        success: function (data, status) {
+                            console.log("callback", data)
+                            setResult(data.result)
+                            $('#throbber').hide()
+                        },
+                        dataType: 'json',
+                        type: 'post'
+                    }
                 )
 
             }
@@ -184,6 +248,7 @@
                     //applyDefaultStyles: true
                 })
                 innerLayout = $('#layout-center').layout({
+                    name: 'inner',
                     center__paneSelector: '#layout-center-center',
                     center__size: '50%',
                     center__onresize: 'resizeEditor',
@@ -209,7 +274,7 @@
                         sender: 'editor'
                     },
                     exec: function(env, args, request) {
-                        run()
+                        saveAndRun()
                     }
                 })
                 editor.getSession().on(
@@ -218,6 +283,7 @@
                         setEditorFresh(false)
                     }
                 )
+                setEditorFresh(true)
             }
 
             function loadRevisionHistory() {
@@ -236,7 +302,7 @@
 
                 $('button#run').click(
                     function() {
-                        run()
+                        saveAndRun()
                     }
                 )
 
@@ -339,7 +405,7 @@
             <div id="revisions"></div>
             descendants: see
             <a href="/treeoflife">tree of life</a>
-
+            <div id="savewarning">document needs saving~</div>
         </div>
 
         <div id="layout-center">

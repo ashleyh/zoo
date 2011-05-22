@@ -127,9 +127,8 @@ def history(id):
     out += '</ul>'
     return out
 
-
-@app.route('/compile', methods=['POST'])
-def potato():
+@app.route('/save', methods=['POST'])
+def save():
     blob = {
         'data': request.form['source']
     }
@@ -140,43 +139,63 @@ def potato():
         'blob_id': blob['_id'],
         'language': request.form['language'],
         'driver': request.form['driver'],
+        'predecessor': request.form['predecessor'],
+        'revision': now()
     }
 
     snippet['_id'] = sha(canonical_json(snippet))
-    
+
     # silently ignore duplicate keys (assuming that
     # same hash => same object :/)
+
     g.db.blobs.insert(blob, safe=False)
     g.db.snippets.insert(snippet, safe=False)
 
-    compile = {
-        'snippet_id': snippet['_id'],
-        'revision_time': now(),
-        'predecessor': request.form['predecessor']
-    }
+    return simplejson.dumps(snippet)
 
-    success = False
+@app.route('/compile', methods=['POST'])
+def compile():
+    print 'compile', request.form['id']
 
-    for retries in range(5):
-        compile['_id'] = get_timestamp()
-        g.db.compiles.insert(compile, safe=True)
-        #XXX check error
-        success = True
-        break
+    snippet = g.db.snippets.find_one(
+        {'_id': request.form['id']}
+    )
+
+    if snippet is None:
+        return simplejson.dumps(
+            {'error':'error'}
+        )
+
+    blob = g.db.blobs.find_one(
+        {'_id': snippet['blob_id']}
+    )
 
 
-        
-
+    #TODO log compile in db
+#    success = False
+#
+#    for retries in range(5):
+#        compile['_id'] = get_timestamp()
+#        g.db.compiles.insert(compile, safe=True)
+#        #XXX check error
+#        success = True
+#        break
     
+    form_data = urllib.urlencode(
+        {
+            'source': blob['data'],
+            'driver': snippet['driver']
+        }
+    )
 
-    form_data = urllib.urlencode(request.form.items())
-    compiler = urllib.urlopen('http://localhost:7777/', form_data)
-    compiled = simplejson.load(compiler)
+    compiled = simplejson.load(
+        urllib.urlopen('http://localhost:7777/', form_data)
+    )
+
     response = {
-        'result': compiled['Result'],
-        'snippet': snippet,
-        'compile': compile
+        'result': compiled['Result']
     }
+
     return simplejson.dumps(response)
 
 if __name__ == "__main__":
