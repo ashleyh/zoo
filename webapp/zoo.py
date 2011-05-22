@@ -201,6 +201,10 @@ def compile():
 
     return simplejson.dumps(response)
 
+@app.route("/")
+def start():
+    return render_template("start.html")
+
 if __name__ == "__main__":
     app.debug = True
     app.run(host="0.0.0.0")
