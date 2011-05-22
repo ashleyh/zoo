@@ -306,13 +306,23 @@
                     }
                 )
 
+                $('#mono').change(
+                    function() {
+                        if ($(this).is(':checked')) {
+                            $('#result').switchClass('result-sans', 'result-mono')
+                        } else {
+                            $('#result').switchClass('result-mono', 'result-sans')
+                        }
+                    }
+                )
+
                 loadRevisionHistory()
 
             })
         </script>
         <style type="text/css">
             body {
-                font-family: "Droid Sans", sans;
+                font-family: "Droid Sans", sans-serif;
             }
             #layout-west {
                 padding: 5px;
@@ -331,9 +341,18 @@
 
             #result {
                 font-size: 120%;
-                font-family: "Droid Sans Mono";
                 overflow: auto;
+                white-space: pre;
             }
+
+            .result-mono {
+                font-family: "Droid Sans Mono", monospace;
+            }
+
+            .result-sans {
+                font-family: "Droid Sans", sans-serif;
+            }
+
             #throbber {
                 border: 1px solid black;
                 width: 200px;
@@ -375,6 +394,9 @@
             pre {
                 margin: 0;
             }
+            .monoresult {
+                font-family: monospace;
+            }
 
         </style>
     </head>
@@ -406,6 +428,8 @@
             descendants: see
             <a href="/treeoflife">tree of life</a>
             <div id="savewarning">document needs saving~</div>
+            <input type="checkbox" id="mono">
+            <label for="mono">use fixed-width font for result</label>
         </div>
 
         <div id="layout-center">
@@ -417,7 +441,7 @@
                     <img src="/static/throbber.gif" />
                     Hold your horses
                 </div>
-                <pre id="result">result</pre>
+                <div id="result" class="result-sans">result</div>
             </div>
         </div>
     </body>
