@@ -42,7 +42,7 @@
                 c: {
                     displayName: 'C',
                     editorMode: require('ace/mode/c_cpp').Mode,
-                    drivers: ['tcc', 'clang', 'gcc']
+                    drivers: ['clang', 'tcc', 'gcc']
                 },
                 cpp: {
                     displayName: 'C++',
@@ -375,13 +375,13 @@
                 color: orange;
             }
 
-            .fieldGroup label {
+            label.left {
                 width: 80px;
                 display: inline-block;
                 margin: 0;
             }
             
-            .fieldGroup select {
+            select.right {
                 width: 110px;
                 margin: 0;
             }
@@ -390,6 +390,7 @@
                 width: 190px;
                 padding: 0;
                 margin: 0;
+                border: 1px solid black;
             }
             pre {
                 margin: 0;
@@ -397,39 +398,31 @@
             .monoresult {
                 font-family: monospace;
             }
-
+            #revisions ul {
+            }
         </style>
     </head>
     <body>
         <div id="layout-west">
             <div class="fieldSet">
                 <div class="fieldGroup">
-                    <label for="language">language</label><select id="language">....</select>
+                    <label class="left" for="language">language</label><select id="language" class="right">....</select>
                 </div>
                 <div class="fieldGroup">
-                    <label for="driver">driver</label><select id="driver">....</select>
+                    <label class="left" for="driver">driver</label><select id="driver" class="right">....</select>
                 </div>
 
                 <button id="run">run</button>
             </div>
                 
-            <div id="languageOptions"></div>
-            keybindings
-            <dl>
-                <dt>C-G</dt>
-                <dt>C-R</dt>
-                <dt>C-enter</dt>
-                <dt>D-G</dt>
-                <dd>run</dd>
-            </dl>
-
-            revision history:
-            <div id="revisions"></div>
-            descendants: see
-            <a href="/treeoflife">tree of life</a>
+            <div class="fieldSet">
+                revision history:
+                <div id="revisions"></div>
+                see also <a href="/treeoflife">tree of life</a>
+            </div>
             <div id="savewarning">document needs saving~</div>
-            <div class="fieldset">
-                <div class="fieldgroup">
+            <div class="fieldSet">
+                <div class="fieldGroup">
                     <input type="checkbox" id="mono">
                     <label for="mono">use fixed-width font for result</label>
                 </div>

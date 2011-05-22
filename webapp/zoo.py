@@ -113,12 +113,15 @@ def treeoflife():
         return result
     return show('')
 
+def shortenid(id):
+    return id[:4] + ".." + id[-4:]
+
 
 @app.route('/history/<id>')
 def history(id):
     out = '<ul>'
     while id != '':
-        out += '<li><a href="/fork/{0}">{0}</a></li>'.format(id)
+        out += '<li><a href="/fork/{0}">{1}</a></li>'.format(id, shortenid(id))
         snippet_doc = g.db.snippets.find_one({'_id': id})
         if snippet_doc is None:
             break
