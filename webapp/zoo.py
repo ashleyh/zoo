@@ -94,7 +94,7 @@ def fork(id):
         return render_template(
             'edit.html',
             defaultLanguage=snippet['language'],
-            defaultDriver='',
+            defaultDriver=snippet['driver'],
             source=blob['data'],
             currentID=id
             )

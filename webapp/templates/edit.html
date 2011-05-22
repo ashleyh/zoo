@@ -89,11 +89,12 @@
 
 
             function setupSelects() {
-                var sel = $('select#language')
+                var lsel = $('select#language')
+                var dsel = $('select#driver')
 
                 for (var shortname in languages) {
                     var language = languages[shortname]
-                    sel.append(
+                    lsel.append(
                         $('<option/>')
                             .attr('value', shortname)
                             .text(language.displayName)
@@ -101,14 +102,13 @@
                 }
                 
 
-                sel.change(function() {
-                    var shortname = sel.val()
+                lsel.change(function() {
+                    var shortname = lsel.val()
                     var language = languages[shortname]
-                    var drivers = $('select#driver')
-                    drivers.empty()
+                    dsel.empty()
     
                     for (var i in language.drivers) {
-                        drivers.append(
+                        dsel.append(
                             $('<option/>').text(language.drivers[i])
                         )
                     }
@@ -117,13 +117,13 @@
                     setEditorFresh(false)
                 })
 
-                $('select#driver').change(function() {
+                dsel.change(function() {
                     setEditorFresh(false)
                 })
 
-                sel.val(defaultLanguage)
-                sel.change()
-
+                lsel.val(defaultLanguage)
+                lsel.change()
+                dsel.val(defaultDriver)
             }
 
             function setResult(result) {
@@ -283,7 +283,6 @@
                         setEditorFresh(false)
                     }
                 )
-                setEditorFresh(true)
             }
 
             function loadRevisionHistory() {
@@ -299,6 +298,7 @@
                 setupEditor()
                 setupLayout()
                 setupSelects()
+                setEditorFresh(true)
 
                 $('button#run').click(
                     function() {
@@ -428,8 +428,12 @@
             descendants: see
             <a href="/treeoflife">tree of life</a>
             <div id="savewarning">document needs saving~</div>
-            <input type="checkbox" id="mono">
-            <label for="mono">use fixed-width font for result</label>
+            <div class="fieldset">
+                <div class="fieldgroup">
+                    <input type="checkbox" id="mono">
+                    <label for="mono">use fixed-width font for result</label>
+                </div>
+            </div>
         </div>
 
         <div id="layout-center">
