@@ -1,0 +1,58 @@
+// zoo.proto - protobuf description for compd protocol
+// 
+// Copyright 2011 Ashley Hewson
+// 
+// This file is part of Compiler Zoo.
+// 
+// Compiler Zoo is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+// 
+// Compiler Zoo is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+// 
+// You should have received a copy of the GNU General Public License
+// along with Compiler Zoo.  If not, see <http://www.gnu.org/licenses/>.
+
+package zoo;
+
+enum Severity {
+    DEBUG = 0; 
+    INFO = 1;
+    WARNING = 2;
+    ERROR = 3;
+}
+
+message SourceReference {
+    optional string filename = 1;
+    optional uint32 line = 2;
+    optional uint32 column = 3;
+}
+
+message CompilerMessage {
+    repeated SourceReference traceback = 1;
+    optional Severity severity = 2;
+    optional string message = 3;
+}
+
+message RunMessage {
+    optional Severity severity = 1;
+    optional string message = 2;
+    repeated SourceReference traceback = 3;
+}
+
+message CompileResponse {
+    required bool compile_success = 1;
+    repeated CompilerMessage compile_messages = 2;
+    optional bool run_success = 3;
+    repeated RunMessage run_messages = 4;
+    optional string run_output = 5;
+}
+
+message CompileRequest {
+    required string driver = 1;
+    required string source = 2;
+}

@@ -15,9 +15,8 @@
 # GNU General Public License for more details.
 # 
 # You should have received a copy of the GNU General Public License
-# along with Compiler Zoo.  If not, see <http:#www.gnu.org/licenses/>.
-
-from flask import Flask, render_template, request, g
+# along with Compiler Zoo.  If not, see <http://www.gnu.org/licenses/>.
+from flask import render_template, request, g
 import urllib
 import hashlib, base64
 import pymongo
@@ -25,10 +24,13 @@ import simplejson
 from timenonsense import now
 import random
 import collections
+import socket
+from zoo.common.socket_wrapper import SocketWrapper
+from zoo.common.proto.zoo_pb2 import CompileRequest, CompileResponse
+from zoo.common.pb_to_json import pb_to_json
+from zoo.webapp import my_flask
 
 BASE64_ALTCHARS='_-'
-
-app = Flask(__name__)
 
 def sha(s):
     """return the sha-256 hash of s, in a url-safe base 64 encoding"""
@@ -59,12 +61,12 @@ def get_timestamp(when=None):
     when = int(1000*1000*when)
     return int_to_b64(when)
 
-@app.before_request
+@my_flask.before_request
 def cheddar():
     con = pymongo.Connection()
     g.db = con.zoo
 
-@app.route('/new/<language>')
+@my_flask.route('/new/<language>')
 def hello_world(language):
     return render_template(
         'edit.html',
@@ -74,9 +76,19 @@ def hello_world(language):
         currentID=''
         )
 
+def run_driver(driver, source):
+    s = socket.socket()
+    s.connect(('localhost', 7777))
+    w = SocketWrapper(s)
+    request = CompileRequest()
+    request.driver = driver
+    request.source = source
+    w.send_pb(request)
+    response = w.recv_pb(CompileResponse)
+    return response
 
 
-@app.route('/fork/<id>')
+@my_flask.route('/fork/<id>')
 def fork(id):
     snippet = g.db.snippets.find_one(id)
     if snippet is None:
@@ -99,13 +111,27 @@ def fork(id):
             currentID=id
             )
  
-@app.route('/treeoflife')
+def get_excerpt(snippet_id):
+    snippet = g.db.snippets.find_one(snippet_id)
+    if snippet is None:
+        return None
+    else:
+        blob = g.db.blobs.find_one(snippet['blob_id'])
+        if blob is None:
+            return None
+        else:
+            return blob['data'][:30].encode('utf-8').encode('string_escape')
+
+@my_flask.route('/treeoflife')
 def treeoflife():
     tree = collections.defaultdict(list)
     for snippet in g.db.snippets.find():
         tree[snippet['predecessor']].append(str(snippet['_id']))
     def show(root):
-        result = '<a href="/fork/{0}">{0}</a>'.format(root)
+        if root == '':
+            result = 'root'
+        else:
+            result = '<a href="/fork/{0}">{1}</a> {2}'.format(root, shortenid(root), get_excerpt(root))
         result += '<ul>'
         for child in tree[root]:
             result += '<li>' + show(child) + '</li>'
@@ -117,7 +143,7 @@ def shortenid(id):
     return id[:4] + ".." + id[-4:]
 
 
-@app.route('/history/<id>')
+@my_flask.route('/history/<id>')
 def history(id):
     out = '<ul>'
     while id != '':
@@ -130,7 +156,7 @@ def history(id):
     out += '</ul>'
     return out
 
-@app.route('/save', methods=['POST'])
+@my_flask.route('/save', methods=['POST'])
 def save():
     blob = {
         'data': request.form['source']
@@ -156,7 +182,7 @@ def save():
 
     return simplejson.dumps(snippet)
 
-@app.route('/compile', methods=['POST'])
+@my_flask.route('/compile', methods=['POST'])
 def compile():
     print 'compile', request.form['id']
 
@@ -184,27 +210,11 @@ def compile():
 #        success = True
 #        break
     
-    form_data = urllib.urlencode(
-        {
-            'source': blob['data'],
-            'driver': snippet['driver']
-        }
-    )
+    response = run_driver(snippet['driver'], blob['data'])
+    response_json = pb_to_json(response)
 
-    compiled = simplejson.load(
-        urllib.urlopen('http://localhost:7777/', form_data)
-    )
+    return simplejson.dumps(response_json)
 
-    response = {
-        'result': compiled['Result']
-    }
-
-    return simplejson.dumps(response)
-
-@app.route("/")
+@my_flask.route("/")
 def start():
     return render_template("start.html")
-
-if __name__ == "__main__":
-    app.debug = True
-    app.run(host="0.0.0.0")

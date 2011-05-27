@@ -17,7 +17,7 @@
  GNU General Public License for more details.
  
  You should have received a copy of the GNU General Public License
- along with Compiler Zoo.  If not, see <http:www.gnu.org/licenses/>.
+ along with Compiler Zoo.  If not, see <http://www.gnu.org/licenses/>.
 #}
 <html>
     <head>
@@ -129,7 +129,41 @@
             }
 
             function setResult(result) {
-                $('#result').text(result).show()
+                $('#result').empty()
+
+                $('#result').append(
+                    $('<div/>').text(
+                        'compile success: ' + result.compile_success
+                    )
+                )
+
+                for (var i in result.compile_messages) {
+                    var message = result.compile_messages[i]
+                    $('#result').append(
+                        $('<div/>').text(message.message)
+                    )
+                }
+
+                if (result.compile_success && ('run_success' in result)) {
+                    $('#result').append($('<hr/>'))
+
+                    $('#result').append(
+                        $('<div/>').text(
+                            'run success: ' + result.run_success
+                        )
+                    )
+
+                    if (result.run_success) {
+                        $('#result').append(
+                            $('<div/>').text(result.run_output)
+                        )
+                    }
+
+                    //TODO run messages
+                }
+
+                $('#result').show()
+                innerLayout.open('south')
             }
 
             function setEditorFresh(fresh) {
@@ -220,8 +254,13 @@
                         },
                         success: function (data, status) {
                             console.log("callback", data)
-                            setResult(data.result)
+                            setResult(data)
                             $('#throbber').hide()
+                        },
+                        error: function () {
+                            $('#throbber').hide()
+                            //TODO show error
+                            console.log('compile error!')
                         },
                         dataType: 'json',
                         type: 'post'
@@ -241,23 +280,32 @@
             function setupLayout() {
                 outerLayout = $('body').layout({
                     name: 'outer',
-                    west__paneSelector: '#layout-west',
-                    west__closable: true,
-                    west__resizable: false,
-                    west__size: 200,
-                    center__paneSelector: '#layout-center',
-                    center__onresize: 'innerLayout.resizeAll',
+                    west: {
+                        paneSelector: '#layout-west',
+                        closable: true,
+                        resizable: false,
+                        size: 200
+                    },
+                    center: {
+                        paneSelector: '#layout-center',
+                        onresize: 'innerLayout.resizeAll',
+                    }
                     //applyDefaultStyles: true
                 })
                 innerLayout = $('#layout-center').layout({
                     name: 'inner',
-                    center__paneSelector: '#layout-center-center',
-                    center__size: '50%',
-                    center__onresize: 'resizeEditor',
-                    south__paneSelector: '#layout-center-south',
-                    south__size: '50%',
-                    south__maxSize: '75%',
-                    south__resizable: true,
+                    center: {
+                        paneSelector: '#layout-center-center',
+                        size: '65%',
+                        onresize: 'resizeEditor',
+                    },
+                    south: {
+                        paneSelector: '#layout-center-south',
+                        size: '35%',
+                        maxSize: '75%',
+                        resizable: true,
+                        initClosed: true
+                    }
                     //applyDefaultStyles: true
                 })
                 resizeEditor()
@@ -440,7 +488,7 @@
                     <img src="/static/throbber.gif" />
                     Hold your horses
                 </div>
-                <div id="result" class="result-sans">result</div>
+                <div id="result" class="result-sans">press Ctrl-G or Apple-G to run</div>
             </div>
         </div>
     </body>

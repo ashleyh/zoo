@@ -1,49 +1,21 @@
-you will need
+how to run it
 =============
 
-* mongo on localhost, default port
-* apparmor set up like the example compd/aa-example
-* some compilers in compd/compilers
-* some binaries in compd/dash/bin (copy them from your own distro or something)
-* port 5000 open if you want other people to be able to use it
-* python-flask (the web framework thingy)
-* a go distro in `$HOME/ext_code/go`
+this works for me on a fresh ubuntu VM:
 
-then do this
-============
+    sudo apt-get install git protobuf-compiler python-flask python-twisted python-protobuf python-pymongo mongodb
+    git clone git://github.com/adgcfad/zoo.git
+    cd zoo/py/zoo/common
+    protoc --python_out proto zoo.proto
+    cd ../..
+    python -m zoo.compd &
+    python -m zoo.webapp 
 
-* `cd compd/server; ./build.sh && ./server`
-  this will run the compile daemon thingy on :7777
-* `cd webapp; python zoo.py`
-  this will run the web app thingy on :5000
-* go to http://localhost:5000
-
-gotchas
+caveats
 =======
 
-* the drivers will probably fail to run if apparmor isn't active. this is by design. the idea is to stop you accidentally running it without a sandbox.
-
-directory layout
-================
-
-the directory layout should look something like this:
-
-* compd - compile daemon thingy
- * compilers - the compiler binaries, currently omitted here because they're enormous
-  * llvm-2.9
-  * mono-2.10.2
-  * tcc-0.9.25
- * dash
-  * bin
-   * aa-check: used to check the sandbox
-   * cat, dash, echo, env, mktemp, rm
- * drivers - these are dash scripts which read code from stdin, compile and run it and put the output on stdout
- * server - the server thingy, written in go
-* webapp - the web app thingy
- * static - static content
-  * js/ace - from ace.ajax.org
- * templates - jinja templates
- * tools - currently contains a thing for bundling together code skeletons into a json thing
+1. **don't run this on a real machine!** even flask's debug mode allows arbitrary code execution.
+2. it doesn't seem to work on py2.6.
 
 license
 =======
