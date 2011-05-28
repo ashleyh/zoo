@@ -21,7 +21,7 @@ from twisted.protocols.basic import Int16StringReceiver
 from twisted.internet import protocol, reactor
 from zoo.common.proto import zoo_pb2
 from zoo.common.proto.zoo_pb2 import CompileRequest, CompileResponse
-import zoo.config
+from zoo import config
 
 class DummyDriver(object):
     def __init__(self, driver):
@@ -65,6 +65,9 @@ class CompileServer(Int16StringReceiver):
 def main():
     factory = protocol.ServerFactory()
     factory.protocol = CompileServer
-    reactor.listenTCP(zoo.config.ZOO_COMPD_PORT, factory)
+    reactor.listenTCP(
+        port=config.ZOO_COMPD_PORT, 
+        factory=factory,
+        interface=config.ZOO_COMPD_HOST)
     reactor.run()
 
