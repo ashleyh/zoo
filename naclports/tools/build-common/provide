@@ -1,0 +1,10 @@
+def configure(*args):
+    run('./configure', *args)
+def make(what=None):
+    if what is None:
+        run('make')
+    else:
+        run('make', what)
+
+provide('configure', configure)
+provide('make', make)

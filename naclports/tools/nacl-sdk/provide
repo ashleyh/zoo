@@ -1,0 +1,4 @@
+path.insert(0, get_inst_dir('nacl-sdk').get('bin'))
+info('testing nacl-gcc')
+gcc = run('nacl-gcc', '-v')
+assert gcc.success

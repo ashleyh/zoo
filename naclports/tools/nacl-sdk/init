@@ -1,0 +1,8 @@
+tarball = download(
+    name='naclsdk_linux.tgz',
+    url='http://commondatastorage.googleapis.com/nativeclient-mirror/nacl/nacl_sdk/naclsdk_linux.tgz',
+    hash='md5:9ab0604a73aed1c41c6ac8fe462d1faa'
+)
+tarball.extract(work_dir)
+toolchain = work_dir.get(glob='native_client_sdk_*/toolchain/linux_x86')
+inst_dir.add_from(toolchain)

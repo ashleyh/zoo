@@ -1,0 +1,17 @@
+path.append(get_tool_dir('ncwrap'))
+
+def ncwrap_set_path():
+    env = globals()['env']
+    env.update({
+        'LIBS': '-lnosys',
+        'CC': 'nacl64-gcc-wrap'
+    })
+
+def ncwrap_allow_io(flag):
+    env = globals()['env']
+    flag = 'yes' if flag else 'no'
+    env.update({'NACL_WRAP_ALLOW_IO': flag})
+
+provide('ncwrap_set_path', ncwrap_set_path)
+provide('ncwrap_allow_io', ncwrap_allow_io)
+

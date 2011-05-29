@@ -1,0 +1,24 @@
+require_port('py27')
+require_tool('ncwrap')
+ncwrap_set_path()
+
+work_dir.add(port_dir.get('test.c'))
+
+pydir = get_inst_dir('py27')
+pyincdir = pydir.get('include')
+pylibdir = pydir.get('lib')
+
+pycflags = [
+    '-I'+pyincdir.path,
+    '-I'+pylibdir.path,
+    '-fno-strict-aliasing',
+    '-g',
+    '-DNDEBUG',
+    '-fwrapv',
+    '-L'+pylibdir.path,
+    '-lpython2.7',
+    '-lm',
+    '-lnosys'
+    ]
+run('nacl64-gcc-wrap', '-o', 'test', 'test.c', *pycflags, cwd=work_dir)
+

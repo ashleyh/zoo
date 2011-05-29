@@ -1,0 +1,110 @@
+#!/usr/bin/python
+
+import sys
+import os
+import subprocess
+import binascii
+import warnings
+
+skeleton = '''#!/usr/bin/python
+
+import sys
+import os
+import binascii
+import subprocess
+import warnings
+
+def get_env_bool(name):
+    val = os.getenv(name, 'no').lower()
+    if val in ('yes', 'y', 'true', 'on', '1'):
+        return True
+    elif val in ('no', 'n', 'false', 'off', '0'):
+        return False
+    else:
+        raise Exception('malformed environment variable: ' + name + '=' + val) 
+
+def decode(in_file, out_file):
+    skip = True
+    for line in in_file:
+        if line.strip() == '###':
+            skip = False
+        elif not skip:
+            data = binascii.a2b_uu(line[1:])
+            out_file.write(data)
+
+def temp_name():
+    warnings.simplefilter('ignore')
+    name = os.tempnam()
+    warnings.resetwarnings()
+    return name
+
+def decode_me(out_path):
+    in_path = __file__
+    with open(in_path, 'r') as in_file:
+        with open(out_path, 'wb') as out_file:
+            decode(in_file, out_file)
+
+def sel_ldr(name, debug, allow_io):
+    args = ['nacl64-sel_ldr']
+    if allow_io: args.append('-a')
+    args.extend(['--', name])
+    args.extend(sys.argv[1:])
+    return subprocess.call(args)
+
+def main():
+    debug = get_env_bool('NACL_WRAP_DEBUG')
+    allow_io = get_env_bool('NACL_WRAP_ALLOW_IO')
+    name = temp_name()
+    decode_me(name)
+    result = sel_ldr(name, debug, allow_io)
+    if debug:
+        sys.stderr.write('left executable at ' + name)
+    else:
+        os.unlink(name)
+
+    return result
+ 
+if __name__ == '__main__':
+    sys.exit(main())
+
+###
+'''
+
+def wrap(in_file, out_file):
+    out_file.write(skeleton)
+    data = in_file.read(45)
+    while len(data) > 0:
+        out_file.write('#' + binascii.b2a_uu(data))
+        data = in_file.read(45)
+
+def main():
+    args = sys.argv[1:]
+    should_wrap = True
+    output = 'a.out'
+
+    for i, arg in enumerate(args):
+        if arg in ('-c', '-S', '-E', '-shared'):
+            should_wrap = False
+        elif arg == '-o':
+            output = args[i+1]
+
+    args.insert(0, 'nacl64-gcc')
+    ret = subprocess.call(args)
+    
+    if ret == 0 and should_wrap:
+        if not os.path.exists(output):
+            #erm...
+            return 1
+        warnings.simplefilter('ignore')
+        out_path = os.tempnam()
+        warnings.resetwarnings()
+        with open(out_path, 'w') as out_file:
+            with open(output, 'rb') as in_file:
+                wrap(in_file, out_file)
+        os.chmod(out_path, 0755)
+        os.rename(out_path, output)
+
+    return ret
+
+if __name__ == '__main__':
+    sys.exit(main())

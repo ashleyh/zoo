@@ -1,0 +1,48 @@
+tarball = download(
+    name='Python-2.7.1.tar.bz2',
+    url='http://www.python.org/ftp/python/2.7.1/Python-2.7.1.tar.bz2',
+    hash='md5:aa27bc25725137ba155910bd8e5ddc4f'
+)
+tarball.extract(work_dir)
+
+nacl = port_dir.get('naclmodule.c')
+mods = work_dir.get('Python-2.7.1/Modules')
+mods.add(nacl)
+
+setup = mods.get('Setup.dist')
+with setup.line_mangler() as m:
+    with m.find_line(regexp='^pwd pwdmodule.c') as line:
+        line.comment_out('#')
+        line.insert_line_before('nacl naclmodule.c')
+    with m.find_line(regexp='^posix posixmodule.c') as line:
+        line.comment_out('#')
+
+require_tool('nacl-sdk')
+require_tool('ncwrap')
+ncwrap_set_path()
+
+configure = work_dir.get('Python-2.7.1/configure')
+build_dir = work_dir.get('build')
+build_dir.make_dirs()
+
+ncwrap_allow_io(True)
+assert run(configure, '--without-threads', cwd=build_dir).success
+assert run('make', 'python', cwd=build_dir).success
+ncwrap_allow_io(False)
+
+python = build_dir.get('python')
+info('testing python')
+assert run(python, '-sS', '-c', 'print \'hai\'').success
+
+inc_dir = inst_dir.get('include')
+inc_dir.make_dirs()
+inc_dir.add_from( work_dir.get('Python-2.7.1/Include') )
+inc_dir.add( work_dir.get('build/pyconfig.h') )
+
+lib_dir = inst_dir.get('lib')
+lib_dir.make_dirs()
+lib_dir.add( work_dir.get('build/libpython2.7.a') )
+
+
+
+
