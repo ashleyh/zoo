@@ -1,3 +1,22 @@
+# portman.py - automate the process of building nacl ports
+#
+# Copyright 2011 Ashley Hewson
+# 
+# This file is part of Compiler Zoo.
+# 
+# Compiler Zoo is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# Compiler Zoo is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with Compiler Zoo.  If not, see <http://www.gnu.org/licenses/>.
+
 import hashlib
 import os
 import tarfile
@@ -19,6 +38,7 @@ def warn(fmt, *args, **kwargs):
     print 'warning:', fmt.format(*args, **kwargs)
 
 def get_hash(algorithm, path):
+    """get a `.hexdigest` of `algorithm` applied to the file at `path"""
     debug('hashing {0} with {1}', path, algorithm)
     hasher = hashlib.new(algorithm)
     size = hasher.block_size
@@ -83,10 +103,16 @@ class LineMangler(object):
 
 
 class FileWrapper(object):
+    """
+    convenience wrapper around a path. `self.path` may or may
+    not actually refer to an extant file or directory.
+    """
+
     def __init__(self, path):
         self.path = os.path.abspath(path)
 
     def extract(self, where):
+        """if `self.path` is some kind of archive file, extract it."""    
         if tarfile.is_tarfile(self.path):
             with tarfile.open(self.path) as tar:
                 info('extracting {0}', self.path)
@@ -101,17 +127,27 @@ class FileWrapper(object):
             raise Exception('unsupported archive format')
  
     def add(self, what, rel_path=None):
+        """
+        if `self.path`/`rel_path` is a directory, copy `what`
+        under it
+        """
         if rel_path is None:
             rel_path = what.basename()
         out_path = self.get(rel_path)
         what.copy_to(out_path)
 
     def add_from(self, what):
+        """
+        if `what` is a directory, add all the files from it to myself
+        """
         assert what.is_dir()
         for child in what.glob():
             self.add(child)
 
     def copy_to(self, where):
+        """
+        move myself to `where`
+        """
         debug('copy {0} -> {1}', self.path, where.path)
         if self.is_dir():
             shutil.copytree(self.path, where.path)
@@ -137,6 +173,7 @@ class FileWrapper(object):
             yield FileWrapper(result)
     
     def get(self, *args, **kwargs):
+        """get a relative path or glob"""
         if 'glob' in kwargs:
             glob_spec = os.path.join(self.path, kwargs['glob'])
             paths = list(self.glob(glob_spec))
@@ -148,9 +185,11 @@ class FileWrapper(object):
             return FileWrapper(os.path.join(self.path, args[0]))
     
     def exists(self):
+        """does `self.path` refer to a real file/dir?"""
         return os.path.exists(self.path)
 
     def make_dirs(self):
+        """if `self.path` doesn't exist, create it as a directory"""
         return os.makedirs(self.path)
 
     def is_dir(self):
@@ -172,6 +211,7 @@ class ScriptRunner(object):
         self.locals = {}
 
     def run(self, script_path):
+        """run a script in this context"""
         execfile(script_path, self.globals, self.locals)
         debug('globals {0!s}', self.globals.keys())
         debug('locals {0!s}', self.locals.keys())
@@ -198,6 +238,7 @@ class ScriptRunner(object):
             pass
 
     def run_cmd(self, *args, **kwargs):
+        """run an external executable"""
         env = self.globals.get('env', {}).copy()
         paths = self.globals.get('path', [])
         env['PATH'] = ":".join([x.path for x in paths])

@@ -3,11 +3,8 @@
 extern int Py_NoSiteFlag;
 
 int main() {
-    puts("hi");
-    Py_NoSiteFlag = 1;
-    Py_SetPythonHome("/");
     Py_Initialize();
-    PyRun_SimpleString("print 'hai'");
+    PyRun_SimpleString("import sys; print 'ohai from python'; print sys.path");
     Py_Finalize();
     return 0;
 }
