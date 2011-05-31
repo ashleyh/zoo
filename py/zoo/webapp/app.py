@@ -16,20 +16,27 @@
 # 
 # You should have received a copy of the GNU General Public License
 # along with Compiler Zoo.  If not, see <http://www.gnu.org/licenses/>.
-from flask import render_template, request, g
+import os
 import urllib
-import hashlib, base64
+import hashlib
+import base64
+import collections
+import random
+import socket
+import subprocess
+
+from flask import render_template, request, g, redirect, url_for
 import pymongo
 import simplejson
+
 from timenonsense import now
-import random
-import collections
-import socket
 from zoo.common.socket_wrapper import SocketWrapper
 from zoo.common.proto.zoo_pb2 import CompileRequest, CompileResponse
 from zoo.common.pb_to_json import pb_to_json
 from zoo.webapp import my_flask
+from zoo import config
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE64_ALTCHARS='_-'
 
 def sha(s):
@@ -63,8 +70,11 @@ def get_timestamp(when=None):
 
 @my_flask.before_request
 def cheddar():
-    con = pymongo.Connection()
-    g.db = con.zoo
+    try:
+        con = pymongo.Connection()
+        g.db = con.zoo
+    except:
+        g.db = None
 
 @my_flask.route('/new/<language>')
 def hello_world(language):
@@ -86,6 +96,59 @@ def run_driver(driver, source):
     w.send_pb(request)
     response = w.recv_pb(CompileResponse)
     return response
+
+def run_coffee(in_path, out_path):
+    print 'running coffee' 
+    # for some reason coffee wants an output dir
+    out_dir = os.path.dirname(out_path)
+    subprocess.call([config.ZOO_COFFEE_BIN, '-o', out_dir, '-c', in_path])
+
+def run_scss(in_path, out_path):
+    print 'running scss'
+    subprocess.call([config.ZOO_SASS_BIN, in_path, out_path])
+
+def get_mtime(path):
+    if os.path.exists(path):
+        return os.stat(path).st_mtime
+    else:
+        return None
+
+#TODO: use If-Modified-Since and ETag
+def dynamic_cache(in_name, out_name, transformer):
+    in_path = os.path.join(SCRIPT_DIR, 'templates', in_name)
+    out_path = os.path.join(SCRIPT_DIR, 'static', out_name)
+    
+    in_time = get_mtime(in_path)
+    out_time = get_mtime(out_path)
+
+    # make sure that the output dir exists
+    # (it's probably initially empty after git clone)
+    out_dir = os.path.dirname(out_path)
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+
+    if (out_time is None) or (out_time < in_time):
+        transformer(in_path, out_path)
+        
+    return redirect(url_for('static', filename=out_name))
+        
+
+@my_flask.route('/dynamic/scss/<name>.css')
+def dynamic_css(name):
+    return dynamic_cache(
+        in_name = 'scss/{0}.scss'.format(name),
+        out_name = 'scss/{0}.css'.format(name),
+        transformer = run_scss
+    )
+
+@my_flask.route('/dynamic/coffee/<name>.js')
+def dynamic_coffee(name):
+    return dynamic_cache(
+        in_name = 'coffee/{0}.coffee'.format(name),
+        out_name = 'coffee/{0}.js'.format(name),
+        transformer = run_coffee
+    )
+
 
 
 @my_flask.route('/fork/<id>')

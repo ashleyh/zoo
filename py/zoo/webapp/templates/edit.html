@@ -23,6 +23,7 @@
     <head>
         <title>compiler zoo</title>
         <link rel="stylesheet" type="text/css" href="/static/css/layout-default.css" />
+        <link rel="stylesheet" type="text/css" href="/dynamic/scss/zoo.css" />
         <link href='http://fonts.googleapis.com/css?family=Droid+Sans' rel='stylesheet' type='text/css'>
         <link href='http://fonts.googleapis.com/css?family=Droid+Sans+Mono' rel='stylesheet' type='text/css'>
         <script src="/static/js/ace/ace.js" type="text/javascript"></script>
@@ -33,6 +34,7 @@
         <script src="/static/js/jquery.js" type="text/javascript"></script>
         <script src="/static/js/jquery-ui.js" type="text/javascript"></script>
         <script src="/static/js/jquery.layout.js" type="text/javascript"></script>
+        <script src="/dynamic/coffee/hello.js" type="text/javascript"></script>
         <script type="text/javascript">
 
             var editor = null
@@ -370,87 +372,6 @@
 
             })
         </script>
-        <style type="text/css">
-            body {
-                font-family: "Droid Sans", sans-serif;
-            }
-            #layout-west {
-                padding: 5px;
-            }
-            #layout-center {
-                padding: 0;
-            }
-            #layout-center-center {
-                padding: 0;
-            }
-            #editor {
-                width: 100%;
-                height: 100%;
-                /*font-size: 120%;*/
-            }
-
-            #result {
-                font-size: 120%;
-                overflow: auto;
-                white-space: pre;
-            }
-
-            .result-mono {
-                font-family: "Droid Sans Mono", monospace;
-            }
-
-            .result-sans {
-                font-family: "Droid Sans", sans-serif;
-            }
-
-            #throbber {
-                border: 1px solid black;
-                width: 200px;
-                height: 60px;
-                margin-left: -100px;
-                margin-top: -30px;
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                text-align: center;
-                line-height: 60px;
-            }
-            .hidden {
-                display: none;
-            }
-            ul {
-                margin: 3px;
-            }
-            .highlight {
-                color: orange;
-            }
-
-            label.left {
-                width: 80px;
-                display: inline-block;
-                margin: 0;
-            }
-            
-            select.right {
-                width: 110px;
-                margin: 0;
-            }
-
-            .fieldSet {
-                width: 190px;
-                padding: 0;
-                margin: 0;
-                border: 1px solid black;
-            }
-            pre {
-                margin: 0;
-            }
-            .monoresult {
-                font-family: monospace;
-            }
-            #revisions ul {
-            }
-        </style>
     </head>
     <body>
         <div id="layout-west">

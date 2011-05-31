@@ -3,13 +3,49 @@ how to run it
 
 this works for me on a fresh ubuntu VM:
 
-    sudo apt-get install git protobuf-compiler python-flask python-twisted python-protobuf python-pymongo mongodb
+    # install some packaged deps
+
+    sudo apt-get install \
+        git \
+        protobuf-compiler python-protobuf \
+        python-flask python-twisted \
+        python-pymongo mongodb \
+        rubygems
+
+    # install node
+
+    sudo apt-get remove nodejs # the ubuntu version is too old
+    git clone http://github.com/joyent/node.git
+    cd node
+    ./configure
+    make # takes several minutes
+    sudo checkinstall
+    cd ..
+
+    # install npm
+
+    git clone http://github.com/isaacs/npm.git
+    cd npm
+    sudo make install # checkinstall doesn't work for some reason
+    cd ..
+
+    # install coffeescript
+
+    sudo npm install -g coffee-script
+
+    # install sass
+
+    sudo gem install sass
+
+    # install zoo
+
     git clone git://github.com/adgcfad/zoo.git
     cd zoo/py/zoo/common
     protoc --python_out proto zoo.proto
     cd ../..
     python -m zoo.compd &
-    python -m zoo.webapp 
+    python -m zoo.webapp
+    # or if you're fussy, cd py && python stupid_reloader.py
 
 caveats
 =======
