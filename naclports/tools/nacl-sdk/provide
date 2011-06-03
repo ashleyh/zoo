@@ -2,11 +2,21 @@ import platform
 
 path.insert(0, get_inst_dir('nacl-sdk').get('bin'))
 
+
 #XXX does this always work?
-if platform.machine() == "x86_64":
+if platform.machine() == 'x86_64':
     nacl_bitness = '64'
 else:
     nacl_bitness = ''
+
+nacl_root = get_inst_dir('nacl-sdk/nacl{0}'.format(nacl_bitness))
+
+env.update({
+    'NACL_SDK_INCLUDE': nacl_root.get('include').path,
+    'NACL_SDK_LIB': nacl_root.get('lib').path,
+})
+    
+
 
 provide('nacl_bitness', nacl_bitness)
 provide('nacl_gcc_name', 'nacl{0}-gcc'.format(nacl_bitness))
@@ -15,3 +25,4 @@ provide('nacl_gxx_name', 'nacl{0}-g++'.format(nacl_bitness))
 info('testing nacl-sdk')
 assert run(nacl_gcc_name, '--version').success
 assert run(nacl_gxx_name, '--version').success
+

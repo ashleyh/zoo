@@ -1,10 +1,12 @@
 require_port('py27')
 require_tool('nacl-sdk')
+require_tool('python-imc')
 
-names = 'test.c fake_fs.c canonicalize.c naclimc.so run_sel_ldr.py'
+names = 'test.c fake_fs.c canonicalize.c run_sel_ldr.py'
 for name in names.split(' '):
     work_dir.add(port_dir.get(name))
 
+work_dir.add(python_imc_obj)
 
 pydir = get_inst_dir('py27')
 pyincdir = pydir.get('include/python2.7')

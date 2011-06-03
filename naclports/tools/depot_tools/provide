@@ -1,0 +1,1 @@
+add_to_path(download_dir.get('depot_tools'))

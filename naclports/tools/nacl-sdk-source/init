@@ -1,0 +1,6 @@
+require_tool('depot_tools')
+nacl_root = download_dir.get('nacl')
+run('gclient', 'config', 'http://src.chromium.org/native_client/trunk/src/native_client', cwd=nacl_root)
+#XXX don't run hooks... they don't work for some reason :\
+run('gclient', 'sync', '-n', cwd=nacl_root)
+

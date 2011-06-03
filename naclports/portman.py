@@ -212,11 +212,21 @@ class FileWrapper(object):
     def symlink_to(self, target):
         os.symlink(target.path, self.path)
 
+    def remove(self):
+        info("removing {0}", self.path)
+        if self.is_dir():
+            shutil.rmtree(self.path)
+        else:
+            os.remove(self.path)
+
+
 @contextmanager
 def urlopen(url):
     f = urllib.urlopen(url)
     yield f
     f.close()
+
+download_dir = FileWrapper('downloads')
 
 class ScriptRunner(object):
     def __init__(self):
@@ -226,9 +236,11 @@ class ScriptRunner(object):
             'require_port': self.require_port,
             'get_inst_dir': get_inst_dir,
             'get_tool_dir': get_tool_dir,
+            'download_dir': download_dir, 
             'info': info,
             'run': self.run_cmd,
             'provide': self.provide,
+            'add_to_path': self.add_to_path
         }
         self.locals = {}
 
@@ -244,17 +256,17 @@ class ScriptRunner(object):
 
     def download(self, name, url, hash):
         info('downloading {0} to {1}', url, name)
-        if not os.path.exists('downloads'):
-            os.mkdir('downloads')
-        out_path = os.path.join('downloads', name)
-        if not os.path.exists(out_path):
+        if not download_dir.exists():
+            download_dir.make_dirs()
+        out = download_dir.get(name)
+        if not out.exists():
             with urlopen(url) as in_file:
-                with open(out_path, 'w') as out_file:
+                with open(out.path, 'w') as out_file:
                     out_file.write(in_file.read())
 
-        if check_hash(hash, out_path):
+        if check_hash(hash, out.path):
             # cool!
-            return FileWrapper(out_path)
+            return out 
         else:
             warn(
                 'hash mismatch: expected {0}, got {1}',
@@ -338,6 +350,9 @@ class ScriptRunner(object):
     def provide(self, name, what):
         self.globals[name] = what
 
+    def add_to_path(self, what):
+        self.globals.setdefault('path', []).append(what)
+
 
 def install_tool(name):
     inst_dir = get_inst_dir(name)
@@ -354,8 +369,9 @@ def install_port(name, toplevel=False):
         run_build_script(name, os.path.join('ports', name, 'go'))
 
 def check_working_dir(path):
-    if not path.exists():
-        path.make_dirs()
+    if path.exists():
+        warn('working dir is not empty: {0}', path.path)
+        path.remove()
 
 def get_port_dir(name):
     return FileWrapper(os.path.join('ports', name))
@@ -380,7 +396,7 @@ def run_build_script(name, path):
         'env': {},
     }
     runner.add_globals(new_globals)
-    #check_working_dir(new_globals['work_dir'])
+    check_working_dir(new_globals['work_dir'])
     #check_working_dir(new_globals['inst_dir'])
     runner.run(path)
 

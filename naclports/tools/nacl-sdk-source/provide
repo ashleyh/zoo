@@ -1,0 +1,17 @@
+require_tool('nacl-sdk')
+
+nacl_root = download_dir.get('nacl/native_client')
+
+def run_scons(*args):
+    args = list(args)
+    scons = nacl_root.get('scons')
+    args.append('naclsdk_mode=manual')
+    if nacl_bitness == '64':
+        args.append('platform=x86-64')
+    env.update({
+    })
+    return run(scons, *args, cwd=nacl_root)
+    
+provide('nacl_sdk_source_scons', run_scons)
+provide('nacl_sdk_source_root', nacl_root)
+provide('nacl_sdk_source_out_dir', nacl_root.get('scons-out'))

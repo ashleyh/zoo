@@ -1,0 +1,14 @@
+require_tool('nacl-sdk-source')
+build_scons =nacl_sdk_source_root.get('src/trusted/python_bindings/build.scons')
+
+with build_scons.line_mangler() as m:
+    try:
+        with m.find_line(regexp='if.*linux.*x86_32') as line:
+            line.comment_out('#')
+            line.insert_line_after('if False:')
+    except: #XXX make cleaner
+        pass
+
+assert nacl_sdk_source_scons('src/trusted/python_bindings').success
+lib = nacl_sdk_source_out_dir.get(glob='*/obj/src/trusted/python_bindings/naclimc.so')
+inst_dir.add(lib)

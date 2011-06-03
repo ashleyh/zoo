@@ -1,0 +1,10 @@
+depot_tools_dir = download_dir.get('depot_tools')
+if depot_tools_dir.exists():
+    svn_action = 'update'
+    svn_cwd = depot_tools_dir
+else:
+    svn_action = 'checkout'
+    svn_cwd = download_dir
+
+assert run('svn', svn_action, 'http://src.chromium.org/svn/trunk/tools/depot_tools', cwd=svn_cwd).success
+

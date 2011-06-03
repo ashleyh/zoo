@@ -1,0 +1,2 @@
+provide('python_imc_obj', get_inst_dir('python-imc').get('naclimc.so'))
+
