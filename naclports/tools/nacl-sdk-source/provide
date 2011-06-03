@@ -5,7 +5,6 @@ nacl_root = download_dir.get('nacl/native_client')
 def run_scons(*args):
     args = list(args)
     scons = nacl_root.get('scons')
-    args.append('naclsdk_mode=manual')
     if nacl_bitness == '64':
         args.append('platform=x86-64')
     env.update({

@@ -74,8 +74,11 @@ def serve(socket):
 def Main(args):
     child_fd, parent_fd = naclimc.os_socketpair()
     socket = naclimc.from_os_socket(parent_fd)
+    bitness = os.environ.get('NACL_BITNESS', '')
+    sel_ldr_name = 'nacl{0}-sel_ldr'.format(bitness)
+
     child = subprocess.Popen(
-        ['nacl64-sel_ldr', '-i', '3:'+str(child_fd), '--', 'test']
+        [sel_ldr_name, '-i', '3:'+str(child_fd), '--', 'test']
     )
     def handler(signum, frame):
         print 'Caught SIGCHLD'

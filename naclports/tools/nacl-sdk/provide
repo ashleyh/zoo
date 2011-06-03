@@ -14,6 +14,7 @@ nacl_root = get_inst_dir('nacl-sdk/nacl{0}'.format(nacl_bitness))
 env.update({
     'NACL_SDK_INCLUDE': nacl_root.get('include').path,
     'NACL_SDK_LIB': nacl_root.get('lib').path,
+    'NACL_BITNESS': nacl_bitness
 })
     
 
