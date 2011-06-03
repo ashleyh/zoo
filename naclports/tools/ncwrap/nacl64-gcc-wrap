@@ -49,7 +49,11 @@ def sel_ldr(name, debug, allow_io):
     if allow_io: args.append('-a')
     args.extend(['--', name])
     args.extend(sys.argv[1:])
-    return subprocess.call(args)
+    try:
+        return subprocess.call(args)
+    except KeyboardInterrupt:
+        # why does this get passed up to me, the parent?
+        return 1
 
 def main():
     debug = get_env_bool('NACL_WRAP_DEBUG')

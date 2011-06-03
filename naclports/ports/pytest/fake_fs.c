@@ -18,98 +18,114 @@
  * along with Compiler Zoo.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/* we get ld to hijack various library calls with the flag
+ * -Wl,--wrap=function_name. the new implementation goes in
+ * __wrap_function_name and the real one is available through
+ * __real_function_name.
+ */
+
+/* XXX: need to go through and add cleanup code */
+
 #include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/nacl_syscalls.h>
+#include <sys/nacl_imc_api.h>
+#include <fcntl.h>
+#include <dirent.h>
+
+#define DEBUG if(0)
 
 #define FD_TABLE_SIZE 256
+#define SOCK 3
 
-struct my_fs_entry {
-    const char* name;
-    mode_t mode;
-    size_t size;
-    const char* data;
-} ;
-
-struct my_fs_entry fs_entries[] = {
-//#include "fake_fs_entries"
-    {"/usr", S_IFDIR|S_IRUSR|S_IXUSR, 0, NULL},
-    {"/usr/local", S_IFDIR|S_IRUSR|S_IXUSR, 0, NULL},
-    {"/usr/local/lib", S_IFDIR|S_IRUSR|S_IXUSR, 0, NULL},
-    {"/usr/local/lib/python2.7", S_IFDIR|S_IRUSR|S_IXUSR, 0, NULL},
-    {"/usr/local/lib/python2.7/os.py", S_IFREG|S_IRUSR, 0, NULL},
-    {"/usr/local/lib/python2.7/lib-dynload", S_IFDIR|S_IRUSR|S_IXUSR, 0, NULL},
-    {"/usr/local/lib/python2.7/lib-dynload/site.py", S_IFREG|S_IRUSR, 0, NULL},
-    {NULL, 0, 0, NULL}
-} ;
-
+/* describes an open file in the fake filesystem */
 struct my_fd {
-    int fs_entry_index;
-    int cursor;
+    char* contents;  /* the whole contents of the file */
+    int32_t size;    /* size of contents */
+    off_t cursor;    /* current offset into contents */
+    mode_t st_mode;  /* for fstat */
+    int flags;       /* flags passed to open() */
 } ;
 
+/* the table of open files */
 struct my_fd* fd_table[FD_TABLE_SIZE] = { NULL };
 
-int
-stat_impl(int fs_entry_index, struct stat* buf) {
-    struct my_fs_entry* fs_entry;
+/* what gets sent over imc to open a file */
+struct my_open_request {
+    char path[256];
+    int flags;
+};
 
-    fs_entry = &fs_entries[fs_entry_index];
+/* what gets received from imc to open a file */
+struct my_open_response {
+    int32_t status;
+    int32_t size;
+};
 
-    buf->st_dev = 0;
-    buf->st_ino = 0;
-    buf->st_mode = fs_entry->mode;
-    buf->st_nlink = 1;
-    buf->st_uid = 0;
-    buf->st_gid = 0;
-    buf->st_rdev = 0;
-    buf->st_size = fs_entry->size;
-    buf->st_blocks = fs_entry->size/512;
-    buf->st_blksize = buf->st_blocks*512;
-    buf->st_atime = 0;
-    buf->st_mtime = 0;
-    buf->st_ctime = 0;
+/* what gets sent over imc to stat a file */
+struct my_stat_request {
+    char path[256];
+};
 
-    return 0;
+/* what gets received from imc to stat a file */
+struct my_stat_response {
+    int32_t status;
+    int32_t st_mode;
+    int32_t st_size;
+};
+
+/* chunk of data, see read_all */
+struct read_block {
+    uint32_t start;
+    uint8_t len;
+    char data[256-5];
+};
+
+/* the real versions of hijacked library calls */
+int __real_fstat(int fs, struct stat* buf);
+off_t __real_lseek (int fd, off_t offset, int whence);
+int __real_open(const char* path, int flags);
+int __real_stat(const char* path, struct stat* buf);    
+ssize_t __real_write(int fd, const void* buf, size_t count);
+int __real_close(int fd);
+ssize_t __real_read(int fd, void* buf, size_t count);
+
+/* see canonicalize.c */
+char* __realpath(const char*, char*);
+
+char* normalize_path(const char* path) {
+    return __realpath(path, NULL);
 }
 
-int
-find_fs_entry(const char* path) {
-    int i;
-    for (i = 0; fs_entries[i].name != NULL; i++) {
-        if (strcmp(fs_entries[i].name, path) == 0) {
-            return i;
-        }
-    }
-    return -1;
-}
 
-off_t
-__real_lseek (int fd, off_t offset, int whence);
-
-int
-underlying_fd_available(int fd) {
-    if (__real_lseek(fd, 0, SEEK_CUR) == (off_t)(-1)) {
+/* does fd refer to a 'real' fd? */
+int underlying_fd_available(int fd) {
+    struct stat buf;
+    if (__real_fstat(fd, &buf) == 0) {
+        return 0;
+    } else {
         if (errno == EBADF) {
             return 1;
         } else {
-            /* lseek can also fail on pipes */
-            return 0; 
+            printf("underlying_fd_available: unexpected errno %d\n", errno);
+            return 1; 
         }
-    } else {
-        return 0;
     }
 }
 
-int
-fd_available(int fd) {
+/* does fd refer to a real or fake fd? */
+int fd_available(int fd) {
     return (fd_table[fd] == NULL) && underlying_fd_available(fd);
 } 
 
-int
-new_fd(int* fd, struct my_fd** fd_struct) {
+/* find an entry in the table that doesn't refer to a real or fake fd
+ * caller must free fd_struct with free()
+ */
+int new_fd(int* fd, struct my_fd** fd_struct) {
     int i;
     for (i = 0; i < FD_TABLE_SIZE; i++) {
         if (fd_available(i)) {
@@ -122,124 +138,316 @@ new_fd(int* fd, struct my_fd** fd_struct) {
     return -1;
 }
 
-int
-__real_fstat(int fs, struct stat* buf);
+/* fill out a whole struct stat from a couple of fields */
+void extend_stat(
+    struct stat* buf,
+    mode_t st_mode, size_t st_size
+) {
+    buf->st_dev = 0;
+    buf->st_ino = 0;
+    buf->st_mode = st_mode;
+    buf->st_uid = 0;
+    buf->st_gid = 0;
+    buf->st_rdev = 0;
+    buf->st_size = st_size;
+    buf->st_blocks = st_size / 512 + 1;
+    buf->st_blksize = buf->st_blocks*512;
+    buf->st_atime = 0;
+    buf->st_mtime = 0;
+    buf->st_ctime = 0;
+}
 
-int
-__wrap_fstat(int fs, struct stat* buf) {
+
+int __wrap_fstat(int fs, struct stat* buf) {
     struct my_fd* fd_struct = fd_table[fs];
     if (fd_struct == NULL) {
         return __real_fstat(fs, buf);
     } else {
-        return stat_impl(fd_struct->fs_entry_index, buf);
+        extend_stat(buf, fd_struct->st_mode, fd_struct->size);
+        return 0;
     }
 }
 
-size_t
-__wrap_readlink(const char* path, char* buf, size_t bufsiz) {
+size_t __wrap_readlink(const char* path, char* buf, size_t bufsiz) {
     /* there are no links on this fake filesystem */
     errno = EINVAL;
     return -1;
 }
 
-int
-__real_open(const char* path, int flags);
+/* receive a single blob of data from imc */
+void simple_recvmsg(
+    int fd,
+    void* buf, size_t size
+) {
+    struct NaClImcMsgHdr header;
+    struct NaClImcMsgIoVec iov;
+    
+    iov.base = buf;
+    iov.length = size;
+    header.iov = &iov;
+    header.iov_length = 1;
+    header.descv = NULL;
+    header.desc_length = 0;
+    header.flags = 0;
 
-int
-__wrap_open(const char* path, int flags) {
-    int i;
-    printf("__wrap_open(%s, %d)\n", path, flags);
-    i = find_fs_entry(path);
-    if (i < 0) {
+    imc_recvmsg(fd, &header, 0);
+}
+    
+/* - i open a socket pair (my_handle, their_handle)
+ * - i send (request, their_handle) over SOCK
+ * - they write a response to their_handle
+ * - i read response from my_handle
+ * - i return my_handle as *fd
+ * - caller does close(*fd).
+ */
+void communicate_fd(
+    const char* name,
+    void* request, size_t request_size, 
+    void* response, size_t response_size,
+    int* fd
+) {
+    struct NaClImcMsgHdr header;
+    struct NaClImcMsgIoVec iov;
+    int sockets[2]; /* the return channel */
+    void* buf = malloc(request_size + 4);
+
+    memcpy(buf, name, 4);
+    memcpy((char*)buf+4, request, request_size);
+
+    imc_socketpair(sockets);
+
+    iov.base = buf;
+    iov.length = request_size + 4;
+    header.iov = &iov;
+    header.iov_length = 1;
+    header.descv = &sockets[1];
+    header.desc_length = 1;
+    header.flags = 0;
+
+
+    /* caller's responsiblity to deal with sockets[0] */
+    *fd = sockets[0];
+
+    /* send request*/
+    imc_sendmsg(SOCK, &header, 0);
+
+    /* we don't need sockets[1] any more on this end */
+    __real_close(sockets[1]);
+
+    /* read response */
+    simple_recvmsg(sockets[0], response, response_size);
+   
+}
+
+/* as communicate_fd, but not interested in the fd */
+void communicate(
+    const char* name,
+    void* request, size_t request_size, 
+    void* response, size_t response_size
+) {
+    int fd;
+    communicate_fd(
+        name,
+        request, request_size,
+        response, response_size,
+        &fd
+    );
+    __real_close(fd);
+}
+ 
+/* read size bytes from fd into dest using a weird little
+ * (not at all official) imc-specific protocol
+ */
+void read_all(
+    int fd,
+    char* dest, size_t size
+) {
+    struct read_block blk;
+    size_t to_read = size;
+    /* i don't really know whether these are received in order
+     * so assume they're not
+     */
+    while (to_read > 0) {
+        simple_recvmsg(fd, &blk, sizeof(blk));
+        memcpy(&dest[blk.start], &blk.data[0], blk.len);
+        to_read -= blk.len;
+    }
+}
+
+/* open file over imc, put struct in fd_struct, return fake fd */
+int open_file_imc(const char* path, int flags, struct my_fd** out_fd_struct) {
+    struct my_open_request request;
+    struct my_open_response response;
+    int response_fd, /* the fd from IMC */
+        fake_fd; /* the fd exposed to the app */
+
+    strncpy(request.path, path, 256);
+    request.flags = flags;
+
+    communicate_fd(
+        "open",
+        (void*) &request, sizeof(request),
+        (void*) &response, sizeof(response),
+        &response_fd
+    );
+
+    if (response.status == 0) {
+        struct my_fd* fd_struct;
+        new_fd(&fake_fd, &fd_struct);
+
+        fd_struct->contents = (char*)malloc(response.size);
+        fd_struct->size = response.size;
+        fd_struct->cursor = 0;
+        fd_struct->flags = flags;
+
+        read_all(response_fd, fd_struct->contents, response.size);
+
+        __real_close(response_fd);
+        DEBUG printf("__wrap_open: fake fd is %d\n", fake_fd);
+        *out_fd_struct = fd_struct;
+        return fake_fd;
+    } else {
+        __real_close(response_fd);
+        DEBUG printf("__wrap_open: %s: imc error %d\n", path, (int)response.status);
+        errno = response.status;
+        return -1;
+    }
+}
+
+/* create new file in the tmpfs */
+int create_file_tmpfs(const char* path, int flags, struct my_fd** out_fd_struct) {
+    int fake_fd;
+    struct my_fd* fd_struct;
+
+    new_fd(&fake_fd, &fd_struct);
+
+    fd_struct->size = 256;
+    fd_struct->contents = (char*)malloc(fd_struct->size);
+    fd_struct->cursor = 0;
+    fd_struct->flags = flags;
+
+    DEBUG printf("__wrap_open: O_CREAT'd fake %d\n", fake_fd);
+    *out_fd_struct = fd_struct;
+    return fake_fd;
+}
+
+int open_file_tmpfs(const char* path, int flags, struct my_fd** out_fd_struct) {
+    /* TODO */
+    errno = ENOENT;
+    return -1;
+}
+
+int my_open(const char* path, int flags, struct my_fd** fd_struct) {
+    int fd;
+
+    fd = open_file_imc(path, flags, fd_struct);
+
+    if (fd != -1)
+        return fd;
+    else if (errno != ENOENT) 
+        return -1;
+
+    fd = open_file_tmpfs(path, flags, fd_struct);
+
+    if (fd != -1)
+        return fd;
+    else if (errno != ENOENT)
+        return -1;
+
+    if (flags & O_CREAT)
+        return create_file_tmpfs(path, flags, fd_struct); 
+    else {
         errno = ENOENT;
         return -1;
-    } else {
-        struct my_fd* fd_struct;
-        int fd;
-        int result = new_fd(&fd, &fd_struct);
+    }        
+}
 
-        if (result < 0) {
-            errno = EMFILE;
-            return -1;
+int __wrap_open(const char* path, int flags) {
+    struct my_fd* fd_struct;
+    DEBUG printf("__wrap_open(%s, %o)\n", path, flags);
+    return my_open(path, flags, &fd_struct);
+}
+
+
+
+
+
+int __wrap_stat(const char* path, struct stat* buf) {
+    struct my_stat_request request;
+    struct my_stat_response response;
+        
+    DEBUG printf("__wrap_stat(%s, ...) \n", path);
+
+    strcpy(request.path, path);
+
+    communicate(
+        "stat",
+        (void*)&request, sizeof(request),
+        (void*)&response, sizeof(response)
+    );
+
+    if (response.status == 0) {
+        extend_stat(buf, response.st_mode, response.st_size);
+        return 0;
+    } else {
+        errno = response.status;
+        return -1;
+    }    
+}
+
+static char* cwd = "/";
+
+char* __wrap_getcwd(char* buf, size_t size) {
+    DEBUG printf("__wrap_getcwd(..., %d)\n", size);
+    strcpy(buf, cwd);
+    return buf;
+}
+
+
+ssize_t __wrap_write(int fd, const void* buf, size_t count) {
+    struct my_fd* fd_struct = fd_table[fd];
+    if (fd_struct == NULL) {
+#if 0
+        /* little test */
+        char c = '!';
+        __real_write(fd, &c, 1);
+#endif
+        return __real_write(fd, buf, count);
+    } else {
+        if ((fd_struct->flags & O_WRONLY) || (fd_struct->flags & O_RDWR)) {
+            return count;
         } else {
-            fd_struct->fs_entry_index = i;
-            fd_struct->cursor = 0;
-            return fd;
+            errno = EBADF;
+            return -1;
         }
     }
 }
 
-int
-__real_stat(const char* path, struct stat* buf);    
 
-int
-__wrap_stat(const char* path, struct stat* buf) {
-    int i;
-
-    
-    i = find_fs_entry(path);
-    
-    printf("__wrap_stat(%s, ...) -> %d\n", path, i);
-    if (i < 0) {
-        errno = ENOENT;
-        return -1;
-    } else {
-        stat_impl(i, buf);
-        return 0;
-    }
-}
-
-char*
-__wrap_getcwd(char* buf, size_t size) {
-    printf("__wrap_getcwd(..., %d)\n", size);
-    errno = ENOSYS;
-    return NULL;
-}
-
-
-ssize_t
-__real_write(int fd, const void* buf, size_t count);
-
-ssize_t
-__wrap_write(int fd, const void* buf, size_t count) {
-#if 0
-    /* little test */
-    char c = '!';
-    __real_write(fd, &c, 1);
-#endif
-    return __real_write(fd, buf, count);
-}
-
-
-int
-__wrap_ftruncate(int fd, off_t length) {
-    printf("__wrap_ftruncate(%d, %d)\n", fd, length);
+int __wrap_ftruncate(int fd, off_t length) {
+    /*TODO*/
+    printf("__wrap_ftruncate(%d, %d)\n", fd, (int)length);
     errno = ENOSYS;
     return -1;
 }
 
-off_t
-__wrap_lseek(int fd, off_t offset, int whence) {
+off_t __wrap_lseek(int fd, off_t offset, int whence) {
     struct my_fd* fd_struct = fd_table[fd];
-    printf("__wrap_lseek(%d, %d, %d)\n", fd, offset, whence);
+    DEBUG printf("__wrap_lseek(%d, %d, %d)\n", fd, (int)offset, whence);
 
     if (fd_struct == NULL) {
         return __real_lseek(fd, offset, whence);
     } else {
-        struct my_fs_entry* fs_entry;
-        
-        fs_entry = &fs_entries[fd_struct->fs_entry_index];
-        
         if (whence == SEEK_SET) {
             fd_struct->cursor = offset;
         } else if (whence == SEEK_CUR) {
             fd_struct->cursor += offset;
         } else if (whence == SEEK_END) {
-            if (fs_entry->size + offset < 0) {
+            if (fd_struct->size + offset < 0) {
                 errno = EINVAL;
                 return -1;
             } else {
-                fd_struct->cursor = fs_entry->size + offset;
+                fd_struct->cursor = fd_struct->size + offset;
             }
         } else {
             errno = EINVAL;
@@ -250,40 +458,123 @@ __wrap_lseek(int fd, off_t offset, int whence) {
     }            
 }
 
-
-int
-__wrap_unlink(const char* pathname) {
-    printf("__wrap_unlink(%s)\n", pathname);
+int __wrap_unlink(const char* pathname) {
+    DEBUG printf("__wrap_unlink(%s)\n", pathname);
     errno = EACCES;
     return -1;
 }
 
 
-int
-__wrap_kill(pid_t pid, int sig) {
+int __wrap_kill(pid_t pid, int sig) {
     printf("__wrap_kill(%d, %d)\n", pid, sig);
     errno = EACCES;
     return -1;
 }
 
 
+void destroy_fd(int fd) {
+    struct my_fd* fd_struct = fd_table[fd];
 
-int
-__real_close(int fd);
+    free(fd_struct->contents);
+    free(fd_struct);
+    fd_table[fd] = NULL;
+}
 
-int
-__wrap_close(int fd) {
-    printf("__wrap_close(%d)\n", fd);
-    return __real_close(fd);
+int __wrap_close(int fd) {
+    struct my_fd* fd_struct = fd_table[fd];
+    DEBUG printf("__wrap_close(%d)\n", fd);
+    if (fd_struct == NULL) {
+        return __real_close(fd);
+    } else {
+        destroy_fd(fd);
+        return 0;
+    }
+}
+
+ssize_t __wrap_read(int fd, void* buf, size_t count) {
+    struct my_fd* fd_struct = fd_table[fd];
+    DEBUG printf("__wrap_read(%d, ..., %d)\n", fd, count);
+    
+    if (fd_struct == NULL) {
+        return __real_read(fd, buf, count);
+    } else {
+        size_t remaining = fd_struct->size - fd_struct->cursor;
+
+        if (remaining < 0) {
+            return 0;
+        } else {
+            char* start = &fd_struct->contents[fd_struct->cursor];
+            if (remaining < count)
+                count = remaining;            
+            memcpy(buf, start, count);
+            fd_struct->cursor += count;
+            return count;
+        }       
+    }        
 }
 
 
-ssize_t
-__real_read(int fd, void* buf, size_t count);
+#define NOT_IMPL { errno = ENOSYS; return -1; }
 
-ssize_t
-__wrap_read(int fd, void* buf, size_t count) {
-    printf("__wrap_read(%d, ..., %d)\n", fd, count);
-    return __real_read(fd, buf, count);
+int __real_fcntl(int fd, int cmd, ...);
+
+int __wrap_fcntl(int fd, int cmd, ...) NOT_IMPL
+
+int __real_dup(int oldfd);
+
+int __wrap_dup(int oldfd) NOT_IMPL
+
+int __real_dup2(int oldfd, int newfd);
+
+int __wrap_dup2(int oldfd, int newfd) NOT_IMPL
+
+int __wrap_link(const char* oldpath, const char* newpath) NOT_IMPL
+
+int __wrap_symlink(const char* oldpath, const char* newpath) NOT_IMPL
+
+int __wrap_chdir(const char* path) NOT_IMPL
+
+struct my_dir {
+    struct my_fd* fd_struct;
+    struct dirent dirent_buf;
+    int fd;
+    int cursor;
+};
+
+struct my_dir* __wrap_opendir(const char* name) {
+    struct my_dir* dirp;
+    dirp = (struct my_dir*) malloc(sizeof(*dirp));
+    dirp->fd = my_open(name, O_RDONLY, &dirp->fd_struct);
+    dirp->cursor = 0;
+
+    if (dirp->fd == -1) {
+        int old_errno = errno;
+        DEBUG printf("__wrap_opendir(%s) -> error", name);
+        errno = old_errno;
+        return NULL;
+    } else {
+        DEBUG printf("__wrap_opendir(%s) -> %s, ...\n", name, dirp->fd_struct->contents);
+        return dirp;
+    }
 }
 
+struct dirent* __wrap_readdir(struct my_dir* dirp) {
+    char name_buf[256];
+    int amount_read;
+
+    lseek(dirp->fd, dirp->cursor, SEEK_SET);
+    amount_read = read(dirp->fd, name_buf, 256);
+    if (amount_read > 0) {
+        dirp->cursor += strlen(name_buf) + 1;
+        strncpy(dirp->dirent_buf.d_name, name_buf, 256);
+        DEBUG printf("__wrap_readdir: returning %d %s\n", amount_read, name_buf);
+        return &dirp->dirent_buf;
+    } else {
+        return NULL;
+    }
+}
+
+int __wrap_closedir(struct my_dir* dirp) {
+    errno = ENOSYS;
+    return -1;
+}

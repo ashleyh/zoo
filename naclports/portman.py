@@ -26,6 +26,7 @@ import re
 import glob
 import subprocess
 import sys
+import urllib
 
 def debug(fmt, *args, **kwargs):
     if False:
@@ -72,6 +73,8 @@ class LineWrapper(object):
     def insert_line_before(self, line):
         return self.mangler._insert_line_before(self, line)
 
+    def insert_line_after(self, line):
+        return self.mangler._insert_line_after(self, line)
 
 class LineMangler(object):
     def __init__(self, lines):
@@ -101,6 +104,10 @@ class LineMangler(object):
         debug('inserted line {0}', w.index)
         w.index += 1
 
+    def _insert_line_after(self, w, line):
+        self.lines.insert(w.index+1, line + '\n')
+
+
 
 class FileWrapper(object):
     """
@@ -110,6 +117,10 @@ class FileWrapper(object):
 
     def __init__(self, path):
         self.path = os.path.abspath(path)
+
+    @property
+    def parent(self):
+        return FileWrapper(os.path.dirname(self.path))
 
     def extract(self, where):
         """if `self.path` is some kind of archive file, extract it."""    
@@ -132,7 +143,7 @@ class FileWrapper(object):
         under it
         """
         if rel_path is None:
-            rel_path = what.basename()
+            rel_path = what.basename
         out_path = self.get(rel_path)
         what.copy_to(out_path)
 
@@ -148,12 +159,15 @@ class FileWrapper(object):
         """
         move myself to `where`
         """
-        debug('copy {0} -> {1}', self.path, where.path)
+        info('copy {0} -> {1}', self.path, where.path)
+        if not where.parent.exists():
+            where.parent.make_dirs()
         if self.is_dir():
             shutil.copytree(self.path, where.path)
         else:
             shutil.copy2(self.path, where.path)
 
+    @property
     def basename(self):
         return os.path.basename(self.path)
 
@@ -195,6 +209,14 @@ class FileWrapper(object):
     def is_dir(self):
         return os.path.isdir(self.path)
 
+    def symlink_to(self, target):
+        os.symlink(target.path, self.path)
+
+@contextmanager
+def urlopen(url):
+    f = urllib.urlopen(url)
+    yield f
+    f.close()
 
 class ScriptRunner(object):
     def __init__(self):
@@ -223,18 +245,20 @@ class ScriptRunner(object):
     def download(self, name, url, hash):
         info('downloading {0} to {1}', url, name)
         out_path = os.path.join('downloads', name)
-        if os.path.exists(out_path):
-            if check_hash(hash, out_path):
-                # cool!
-                return FileWrapper(out_path)
-            else:
-                warn(
-                    'hash mismatch: expected {0}, got {1}',
-                    hash, got_hash
-                )
-                # boo!
-                pass
+        if not os.path.exists(out_path):
+            with urlopen(url) as in_file:
+                with open(out_path, 'w') as out_file:
+                    out_file.write(in_file.read())
+
+        if check_hash(hash, out_path):
+            # cool!
+            return FileWrapper(out_path)
         else:
+            warn(
+                'hash mismatch: expected {0}, got {1}',
+                hash, got_hash
+            )
+            # boo!
             pass
 
     def run_cmd(self, *args, **kwargs):
@@ -243,10 +267,15 @@ class ScriptRunner(object):
         paths = self.globals.get('path', [])
         env['PATH'] = ":".join([x.path for x in paths])
         cwd = kwargs.get('cwd', None)
-        
+        quiet = kwargs.get('quiet', False)
+
         if cwd is not None:
-            if isinstance(cwd, FileWrapper):
-                cwd = cwd.path
+            if not isinstance(cwd, FileWrapper):
+                cwd = FileWrapper(cwd)
+            if not cwd.exists():
+                cwd.make_dirs()
+            cwd = cwd.path
+            
         
         if isinstance(args[0], FileWrapper):
             args = (args[0].path,) + args[1:]
@@ -254,11 +283,16 @@ class ScriptRunner(object):
         info('running {0}', args[0])
         debug('environment is {0!s}', env)
 
+        if quiet:
+            fd_type=subprocess.PIPE
+        else:
+            fd_type=None
+
         p = subprocess.Popen(
             args,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdin=fd_type,
+            stdout=fd_type,
+            stderr=fd_type,
             cwd=cwd,
             env=env
         )
@@ -267,14 +301,20 @@ class ScriptRunner(object):
             pass
 
         result = RunResult()
-        result.stdout, result.stderr = p.communicate()
+        if quiet:
+            result.stdout, result.stderr = p.communicate()
+        else:
+            p.wait()
         result.exit_code = p.returncode
         result.success = (result.exit_code == 0)
 
         if not result.success:
-            warn('command failed, output follows')
-            sys.stdout.write(result.stdout)
-            sys.stderr.write(result.stderr)
+            if quiet:
+                warn('command failed, output follows')
+                sys.stdout.write(result.stdout)
+                sys.stderr.write(result.stderr)
+            else:
+                warn('command failed')
 
         return result
 
@@ -304,7 +344,7 @@ def install_tool(name):
     else:
         run_build_script(name, os.path.join('tools', name, 'init'))
 
-def install_port(name):
+def install_port(name, toplevel=False):
     inst_dir = get_inst_dir(name)
     if inst_dir.exists():
         info('assuming {0} already installed', name)
@@ -338,10 +378,10 @@ def run_build_script(name, path):
         'env': {},
     }
     runner.add_globals(new_globals)
-    check_working_dir(new_globals['work_dir'])
-    check_working_dir(new_globals['inst_dir'])
+    #check_working_dir(new_globals['work_dir'])
+    #check_working_dir(new_globals['inst_dir'])
     runner.run(path)
 
 
 if __name__=='__main__':
-    install_port('pytest')
+    install_port(sys.argv[1], toplevel=True)
