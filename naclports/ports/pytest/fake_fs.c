@@ -42,12 +42,25 @@
 #define FD_TABLE_SIZE 256
 #define SOCK 3
 
+struct tmpfs_entry {
+    struct tmpfs_entry* next;
+    struct tmpfs_entry* prev;
+
+    char* name;
+    char* contents;  /* the whole contents of the file */
+    int32_t size;    /* apparent size of contents */
+    int32_t actual_size; /* size of buffer allocated */
+    mode_t st_mode;  /* for fstat */
+    char unlink_on_close;
+};
+
+struct tmpfs_entry* tmpfs = NULL;
+struct tmpfs_entry* tmpfs_end = NULL;
+
 /* describes an open file in the fake filesystem */
 struct my_fd {
-    char* contents;  /* the whole contents of the file */
-    int32_t size;    /* size of contents */
+    struct tmpfs_entry* backing; 
     off_t cursor;    /* current offset into contents */
-    mode_t st_mode;  /* for fstat */
     int flags;       /* flags passed to open() */
 } ;
 
@@ -85,6 +98,7 @@ struct read_block {
     char data[256-5];
 };
 
+
 /* the real versions of hijacked library calls */
 int __real_fstat(int fs, struct stat* buf);
 off_t __real_lseek (int fd, off_t offset, int whence);
@@ -92,6 +106,7 @@ int __real_open(const char* path, int flags);
 int __real_stat(const char* path, struct stat* buf);    
 ssize_t __real_write(int fd, const void* buf, size_t count);
 int __real_close(int fd);
+int __real_ftruncate(int, off_t);
 ssize_t __real_read(int fd, void* buf, size_t count);
 
 /* see canonicalize.c */
@@ -101,6 +116,11 @@ char* normalize_path(const char* path) {
     return __realpath(path, NULL);
 }
 
+/* this is supposed to be in string.h ...? */
+char* strdup(const char* str);
+
+/* this is supposed to be in unistd.h ...? */
+int ftruncate(int, off_t);
 
 /* does fd refer to a 'real' fd? */
 int underlying_fd_available(int fd) {
@@ -163,7 +183,8 @@ int __wrap_fstat(int fs, struct stat* buf) {
     if (fd_struct == NULL) {
         return __real_fstat(fs, buf);
     } else {
-        extend_stat(buf, fd_struct->st_mode, fd_struct->size);
+        struct tmpfs_entry* tmpf = fd_struct->backing;
+        extend_stat(buf, tmpf->st_mode, tmpf->size);
         return 0;
     }
 }
@@ -293,14 +314,25 @@ int open_file_imc(const char* path, int flags, struct my_fd** out_fd_struct) {
 
     if (response.status == 0) {
         struct my_fd* fd_struct;
+        struct tmpfs_entry* tmpf;
+        
         new_fd(&fake_fd, &fd_struct);
+        
+        tmpf = (struct tmpfs_entry*) malloc(sizeof(*tmpf));
+        tmpf->contents = (char*) malloc(response.size);
+        tmpf->size = response.size;
+        tmpf->actual_size = response.size;
+        tmpf->name = NULL;
+        tmpf->next = NULL;
+        tmpf->prev = tmpfs_end;
+        tmpf->unlink_on_close = 1;
+        tmpfs_end = tmpf;
 
-        fd_struct->contents = (char*)malloc(response.size);
-        fd_struct->size = response.size;
+        fd_struct->backing = tmpf;
         fd_struct->cursor = 0;
         fd_struct->flags = flags;
 
-        read_all(response_fd, fd_struct->contents, response.size);
+        read_all(response_fd, tmpf->contents, response.size);
 
         __real_close(response_fd);
         DEBUG printf("__wrap_open: fake fd is %d\n", fake_fd);
@@ -318,11 +350,21 @@ int open_file_imc(const char* path, int flags, struct my_fd** out_fd_struct) {
 int create_file_tmpfs(const char* path, int flags, struct my_fd** out_fd_struct) {
     int fake_fd;
     struct my_fd* fd_struct;
+    struct tmpfs_entry* tmpf;
 
     new_fd(&fake_fd, &fd_struct);
 
-    fd_struct->size = 256;
-    fd_struct->contents = (char*)malloc(fd_struct->size);
+    tmpf = (struct tmpfs_entry*) malloc(sizeof(*tmpf));
+    tmpf->size = 0;
+    tmpf->actual_size = 256;
+    tmpf->contents = (char*) malloc(tmpf->actual_size);
+    tmpf->name = strdup(path);
+    tmpf->next = tmpfs;
+    tmpf->prev = NULL;
+    tmpf->unlink_on_close = 0;
+    tmpfs = tmpf;
+
+    fd_struct->backing = tmpf;
     fd_struct->cursor = 0;
     fd_struct->flags = flags;
 
@@ -331,8 +373,34 @@ int create_file_tmpfs(const char* path, int flags, struct my_fd** out_fd_struct)
     return fake_fd;
 }
 
+void resize(struct tmpfs_entry* tmpf, size_t size) {
+    if (size > tmpf->actual_size) {
+        tmpf->actual_size *= 2;
+        if (size > tmpf->actual_size)
+            tmpf->actual_size = size;
+        tmpf->contents = realloc(tmpf->contents, tmpf->actual_size);
+    }
+    tmpf->size = size;
+}
+
 int open_file_tmpfs(const char* path, int flags, struct my_fd** out_fd_struct) {
-    /* TODO */
+    struct tmpfs_entry* head = tmpfs;
+    for (head = tmpfs; head != NULL; head = head->next) {
+        if (strcmp(path, head->name) == 0) {
+            struct my_fd* fd_struct;
+            int fake_fd;
+            
+            new_fd(&fake_fd, &fd_struct);
+
+            fd_struct->backing = head;
+            fd_struct->cursor = 0;
+            fd_struct->flags = flags;
+            
+            *out_fd_struct = fd_struct;
+            return fake_fd;
+        }
+    }
+
     errno = ENOENT;
     return -1;
 }
@@ -364,8 +432,17 @@ int my_open(const char* path, int flags, struct my_fd** fd_struct) {
 
 int __wrap_open(const char* path, int flags) {
     struct my_fd* fd_struct;
+    int fd;
     DEBUG printf("__wrap_open(%s, %o)\n", path, flags);
-    return my_open(path, flags, &fd_struct);
+    fd = my_open(path, flags, &fd_struct);
+    if (fd != -1) {
+        if (flags & O_TRUNC) {
+            ftruncate(fd, 0) ;
+        }
+        return fd;
+    } else {
+        return -1;
+    }
 }
 
 
@@ -415,6 +492,10 @@ ssize_t __wrap_write(int fd, const void* buf, size_t count) {
         return __real_write(fd, buf, count);
     } else {
         if ((fd_struct->flags & O_WRONLY) || (fd_struct->flags & O_RDWR)) {
+            struct tmpfs_entry* tmpf = fd_struct->backing;
+            resize(tmpf, fd_struct->cursor + count);
+            memcpy(&tmpf->contents[fd_struct->cursor], buf, count);
+            fd_struct->cursor += count;
             return count;
         } else {
             errno = EBADF;
@@ -425,10 +506,15 @@ ssize_t __wrap_write(int fd, const void* buf, size_t count) {
 
 
 int __wrap_ftruncate(int fd, off_t length) {
-    /*TODO*/
-    printf("__wrap_ftruncate(%d, %d)\n", fd, (int)length);
-    errno = ENOSYS;
-    return -1;
+    struct my_fd* fd_struct = fd_table[fd];
+    DEBUG printf("__wrap_ftruncate(%d, %d)\n", fd, (int)length);
+
+    if (fd_struct == NULL) {
+        return __real_ftruncate(fd, length);
+    } else {
+        resize(fd_struct->backing, length);
+        return 0;
+    }
 }
 
 off_t __wrap_lseek(int fd, off_t offset, int whence) {
@@ -443,11 +529,11 @@ off_t __wrap_lseek(int fd, off_t offset, int whence) {
         } else if (whence == SEEK_CUR) {
             fd_struct->cursor += offset;
         } else if (whence == SEEK_END) {
-            if (fd_struct->size + offset < 0) {
+            if (fd_struct->backing->size + offset < 0) {
                 errno = EINVAL;
                 return -1;
             } else {
-                fd_struct->cursor = fd_struct->size + offset;
+                fd_struct->cursor = fd_struct->backing->size + offset;
             }
         } else {
             errno = EINVAL;
@@ -458,8 +544,30 @@ off_t __wrap_lseek(int fd, off_t offset, int whence) {
     }            
 }
 
-int __wrap_unlink(const char* pathname) {
-    DEBUG printf("__wrap_unlink(%s)\n", pathname);
+void my_unlink(struct tmpfs_entry* tmpf) {
+    if (tmpf->prev == NULL) {
+        tmpfs = tmpf->next;   
+    } else {
+        tmpf->prev->next = tmpf->next;
+    }
+    
+    if (tmpf->next == NULL) {
+        tmpfs_end = tmpf->prev;
+    } else {
+        tmpf->next->prev = tmpf->prev;
+    }
+
+    free(tmpf);
+}
+
+int __wrap_unlink(const char* path) {
+    struct tmpfs_entry* head = tmpfs;
+    for (head = tmpfs; head != NULL; head = head->next) {
+        if (strcmp(path, head->name) == 0) {
+            my_unlink(head);
+            return 0;
+        }
+    }
     errno = EACCES;
     return -1;
 }
@@ -474,9 +582,10 @@ int __wrap_kill(pid_t pid, int sig) {
 
 void destroy_fd(int fd) {
     struct my_fd* fd_struct = fd_table[fd];
-
-    free(fd_struct->contents);
-    free(fd_struct);
+    struct tmpfs_entry* tmpf = fd_struct->backing;
+    if (tmpf->unlink_on_close)
+        my_unlink(tmpf);
+    free(fd_struct); 
     fd_table[fd] = NULL;
 }
 
@@ -498,12 +607,12 @@ ssize_t __wrap_read(int fd, void* buf, size_t count) {
     if (fd_struct == NULL) {
         return __real_read(fd, buf, count);
     } else {
-        size_t remaining = fd_struct->size - fd_struct->cursor;
 
-        if (remaining < 0) {
+        if (fd_struct->backing->size < fd_struct->cursor) {
             return 0;
         } else {
-            char* start = &fd_struct->contents[fd_struct->cursor];
+            char* start = &fd_struct->backing->contents[fd_struct->cursor];
+            size_t remaining = fd_struct->backing->size - fd_struct->cursor;
             if (remaining < count)
                 count = remaining;            
             memcpy(buf, start, count);
@@ -553,7 +662,7 @@ struct my_dir* __wrap_opendir(const char* name) {
         errno = old_errno;
         return NULL;
     } else {
-        DEBUG printf("__wrap_opendir(%s) -> %s, ...\n", name, dirp->fd_struct->contents);
+        DEBUG printf("__wrap_opendir(%s) -> %s, ...\n", name, dirp->fd_struct->backing->contents);
         return dirp;
     }
 }
