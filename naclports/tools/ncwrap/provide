@@ -1,10 +1,12 @@
+require_tool('nacl-sdk')
+
 path.append(get_tool_dir('ncwrap'))
 
 def ncwrap_set_path():
     env = globals()['env']
     env.update({
         'LIBS': '-lnosys',
-        'CC': 'nacl64-gcc-wrap'
+        'CC': nacl_gcc_name + '-wrap'
     })
 
 def ncwrap_allow_io(flag):
@@ -14,4 +16,3 @@ def ncwrap_allow_io(flag):
 
 provide('ncwrap_set_path', ncwrap_set_path)
 provide('ncwrap_allow_io', ncwrap_allow_io)
-

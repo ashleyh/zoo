@@ -33,7 +33,7 @@ pycflags = [
     '-pedantic'    
     ]  + ['-Wl,--wrap=' + name for name in to_wrap]
 
-if run('nacl64-gcc', '-o', 'test', 'test.c', 'fake_fs.c', 'canonicalize.c', *pycflags, cwd=work_dir).success:
+if run(nacl_gcc_name, '-o', 'test', 'test.c', 'fake_fs.c', 'canonicalize.c', *pycflags, cwd=work_dir).success:
     info('running output')
     out = run(work_dir.get('run_sel_ldr.py'), cwd=work_dir)
     info('code was {0}', out.exit_code)

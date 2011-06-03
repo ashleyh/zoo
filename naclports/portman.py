@@ -244,6 +244,8 @@ class ScriptRunner(object):
 
     def download(self, name, url, hash):
         info('downloading {0} to {1}', url, name)
+        if not os.path.exists('downloads'):
+            os.mkdir('downloads')
         out_path = os.path.join('downloads', name)
         if not os.path.exists(out_path):
             with urlopen(url) as in_file:
