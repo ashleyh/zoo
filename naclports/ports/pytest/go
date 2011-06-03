@@ -1,17 +1,20 @@
 require_port('py27')
 require_tool('nacl-sdk')
-require_tool('ncwrap')
-ncwrap_set_path()
 
-work_dir.add(port_dir.get('test.c'))
-work_dir.add(port_dir.get('fake_fs.c'))
+names = 'test.c fake_fs.c canonicalize.c naclimc.so run_sel_ldr.py'
+for name in names.split(' '):
+    work_dir.add(port_dir.get(name))
+
 
 pydir = get_inst_dir('py27')
-pyincdir = pydir.get('include')
+pyincdir = pydir.get('include/python2.7')
 pylibdir = pydir.get('lib')
+work_dir.get('fakefs').symlink_to(pydir)
 
-to_wrap = 'access chdir chmod chown close dup dup2 endpwent execve fchdir fchmod fchown fcntl fork fstat ftruncate get_current_dir_name getcwd getegid geteuid getgid getppid getpwent getpwnam getpwnam_r getpwuid getpwuid_r getrusage gettimeofday getuid getwd ioctl kill lchown link llseek lseek lstat mkdir open pipe pselect pthread_cleanup_pop pthread_cleanup_push raise read readlink rmdir select setegid seteuid setgid setpwent settimeofday setuid stat symlink times truncate ttyname ttyname_r umask unlink utime utimes vfork wait waitpid write'.split(' ')
+to_wrap = 'access chdir chmod chown close dup dup2 endpwent execve fchdir fchmod fchown fcntl fstat ftruncate get_current_dir_name getcwd getpwent getpwnam getpwnam_r getpwuid getpwuid_r getwd ioctl lchown link llseek lseek lstat mkdir open pipe pselect read readlink rmdir select setpwent settimeofday stat symlink truncate ttyname ttyname_r umask unlink write opendir readdir closedir'.split(' ')
 
+for x in 'chown lstat pipe rmdir umask mkdir lchown fchown fchmod chmod ttyname access execve select'.split(' '):
+    if x in to_wrap: to_wrap.remove(x)
 
 pycflags = [
     '-I'+pyincdir.path,
@@ -24,12 +27,14 @@ pycflags = [
     '-lpython2.7',
     '-lm',
     '-lnosys',
-    '-Werror'
+    '-std=c99',
+    '-Wall',
+    '-Werror',
+    '-pedantic'    
     ]  + ['-Wl,--wrap=' + name for name in to_wrap]
-if run('nacl64-gcc-wrap', '-o', 'test', 'test.c', 'fake_fs.c', *pycflags, cwd=work_dir).success:
+
+if run('nacl64-gcc', '-o', 'test', 'test.c', 'fake_fs.c', 'canonicalize.c', *pycflags, cwd=work_dir).success:
     info('running output')
-    out = run(work_dir.get('test'), cwd=work_dir)
-    info('output was\n{0}', out.stdout)
-    info('stderr was\n{0}', out.stderr)
+    out = run(work_dir.get('run_sel_ldr.py'), cwd=work_dir)
     info('code was {0}', out.exit_code)
 
