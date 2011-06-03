@@ -1,0 +1,141 @@
+#!/usr/bin/python
+
+import sys
+import os
+import subprocess
+import binascii
+import warnings
+
+def wrap(in_file, out_file, sel_ldr_name):
+    skeleton = '''#!/usr/bin/python
+
+import sys
+import os
+import binascii
+import subprocess
+import warnings
+
+sel_ldr_name = "'''+sel_ldr_name+'''"
+
+def get_env_bool(name):
+    val = os.getenv(name, 'no').lower()
+    if val in ('yes', 'y', 'true', 'on', '1'):
+        return True
+    elif val in ('no', 'n', 'false', 'off', '0'):
+        return False
+    else:
+        raise Exception('malformed environment variable: ' + name + '=' + val) 
+
+def decode(in_file, out_file):
+    skip = True
+    for line in in_file:
+        if line.strip() == '###':
+            skip = False
+        elif not skip:
+            data = binascii.a2b_uu(line[1:])
+            out_file.write(data)
+
+def temp_name():
+    warnings.simplefilter('ignore')
+    name = os.tempnam()
+    warnings.resetwarnings()
+    return name
+
+def decode_me(out_path):
+    in_path = __file__
+    with open(in_path, 'r') as in_file:
+        with open(out_path, 'wb') as out_file:
+            decode(in_file, out_file)
+
+def sel_ldr(name, debug, allow_io):
+    args = [sel_ldr_name]
+    if allow_io: args.append('-a')
+    args.extend(['--', name])
+    args.extend(sys.argv[1:])
+    try:
+        return subprocess.call(args)
+    except KeyboardInterrupt:
+        # why does this get passed up to me, the parent?
+        return 1
+
+def main():
+    debug = get_env_bool('NACL_WRAP_DEBUG')
+    allow_io = get_env_bool('NACL_WRAP_ALLOW_IO')
+    name = temp_name()
+    decode_me(name)
+    result = sel_ldr(name, debug, allow_io)
+    if debug:
+        sys.stderr.write('left executable at ' + name)
+    else:
+        os.unlink(name)
+
+    return result
+ 
+if __name__ == '__main__':
+    sys.exit(main())
+
+###
+'''
+    out_file.write(skeleton)
+    data = in_file.read(45)
+    while len(data) > 0:
+        out_file.write('#' + binascii.b2a_uu(data))
+        data = in_file.read(45)
+
+def unwrap_name(name):
+    """
+    given the name that this file was executed with, deduce 
+    the name of the compiler that should be invoked
+    """
+    suffix = "-wrap"
+    name = os.path.basename(name)
+    if name.endswith(suffix):
+        return name[:-len(suffix)]
+    else:
+        raise ValueError()
+
+def tempnam():
+    """
+    hacky wrapper around os.tempnam to  stop a warning from appearing
+    """
+    warnings.simplefilter('ignore')
+    out_path = os.tempnam()
+    warnings.resetwarnings()
+    return out_path
+
+def main():
+    my_name = sys.argv[0]
+    compiler_name = unwrap_name(my_name)
+    bitness = '64' if '64' in compiler_name else ''
+    sel_ldr_name = 'nacl{0}-sel_ldr'.format(bitness)
+    compiler_args = sys.argv[1:]
+    compiler_out_name = 'a.out'
+
+    # do we think the compiler is going to output an executable
+    # that needs wrapping, or just some other object?
+    should_wrap = True
+    for i, arg in enumerate(compiler_args):
+        if arg in ('-c', '-S', '-E', '-shared'):
+            should_wrap = False
+        elif arg == '-o':
+            compiler_out_name = compiler_args[i+1]
+
+    # run compiler
+    ret = subprocess.call([compiler_name] + compiler_args)
+    
+    # wrap output
+    if ret == 0 and should_wrap:
+        if not os.path.exists(compiler_out_name):
+            #erm...  not sure why this would have happened
+            return 1
+        out_path = tempnam()
+        with open(out_path, 'w') as out_file:
+            with open(compiler_out_name, 'rb') as in_file:
+                wrap(in_file, out_file, sel_ldr_name)
+        os.chmod(out_path, 0755)
+        os.rename(out_path, compiler_out_name)
+
+    return ret
+
+if __name__ == '__main__':
+    sys.exit(main())
