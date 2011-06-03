@@ -1,3 +1,5 @@
 *.pyc
 *.swp
 py/zoo/common/proto/zoo_pb2.py
+.DS_Store
+.sass-cache
