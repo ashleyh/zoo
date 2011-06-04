@@ -1,0 +1,6 @@
+[submodule "py/zoo/webapp/static/js/ext/ace"]
+	path = py/zoo/webapp/static/js/ext/ace
+	url = https://github.com/ajaxorg/ace.git
+[submodule "py/zoo/webapp/static/js/ext/jquery"]
+	path = py/zoo/webapp/static/js/ext/jquery
+	url = https://github.com/jquery/jquery.git
