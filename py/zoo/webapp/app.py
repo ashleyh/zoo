@@ -312,7 +312,7 @@ def make_bookmarklet(url):
     source = source.replace('{{root}}', request.url_root)
 
     # try to detect when the user needs to update their bookmark
-    version = hex(zlib.adler32(source) & 0xffffffff)
+    version = '0x{0:x}'.format(zlib.adler32(source) & 0xffffffff)
     source = source.replace('{{version}}', version)
 
     return 'javascript:' + source
