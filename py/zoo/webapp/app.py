@@ -17,13 +17,14 @@
 # You should have received a copy of the GNU General Public License
 # along with Compiler Zoo.  If not, see <http://www.gnu.org/licenses/>.
 import os
-import urllib
 import hashlib
 import base64
 import collections
-import random
+import random       # to generate compile ids
 import socket
 import subprocess
+import re
+import zlib         # for adler32
 
 from flask import render_template, request, g, redirect, url_for
 import pymongo
@@ -40,7 +41,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE64_ALTCHARS='_-'
 
 def sha(s):
-    """return the sha-256 hash of s, in a url-safe base 64 encoding"""
+    """
+    return the sha-256 hash of `s`, in a url-safe base-64 encoding
+    """
     hasher = hashlib.sha256()
     hasher.update(s)
     digest = hasher.digest()
@@ -48,8 +51,10 @@ def sha(s):
     return b64.rstrip('=')
 
 def canonical_json(obj):
-    """return a canonical representation of obj as a json string
-    i.e. if a == b then canonical_json(a) == canonical_json(b)"""
+    """
+    return a canonical representation of obj as a json string
+    i.e. if `a == b` then `canonical_json(a) == canonical_json(b)`
+    """
     return simplejson.dumps(obj, sort_keys=True)
 
 def int_to_b64(n):
@@ -278,6 +283,45 @@ def compile():
 
     return simplejson.dumps(response_json)
 
+def make_bookmarklet(url):
+    source = '''
+        (function() {
+            var e = document.createElement('script'),
+                t = Math.random(), // try to override cache
+                w = window;
+            e.setAttribute('src', '{{url}}?' + t);
+            w.zooBookmarkletVersion = {{version}};
+            w.zooBookmarkletScript = e;
+            w.zooRoot = '{{root}}';
+            document.body.appendChild(e);
+        })();
+    '''
+
+    # this is not intended to be secure or anything,
+    # just stop mistakes...
+    if ("'" in url) or ('"' in url) or ('\\' in url):
+        raise ValueError("don't put \' \" \\ in the url...")
+    
+    # pseudo-minify
+    source = re.sub('//.*', '', source)
+    source = re.sub('\s+', ' ', source)
+    source = source.strip()
+
+    # .format() is a pain with a curly-bracket language like JS
+    source = source.replace('{{url}}', url)
+    source = source.replace('{{root}}', request.url_root)
+
+    # try to detect when the user needs to update their bookmark
+    version = hex(zlib.adler32(source) & 0xffffffff)
+    source = source.replace('{{version}}', version)
+
+    return 'javascript:' + source
+                    
+
 @my_flask.route("/")
 def start():
-    return render_template("start.html")
+    url = url_for('static', filename='js/bookmarklet.js', _external=True)
+    return render_template(
+        "start.html",
+        bookmarklet=make_bookmarklet(url)
+    )
