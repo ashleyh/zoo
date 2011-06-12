@@ -25,10 +25,12 @@ import socket
 import subprocess
 import re
 import zlib         # for adler32
+import cPickle as pickle
 
-from flask import render_template, request, g, redirect, url_for
+from flask import render_template, request, g, redirect, url_for, jsonify, make_response
 import pymongo
 import simplejson
+import chardet
 
 from timenonsense import now
 from zoo.common.socket_wrapper import SocketWrapper
@@ -44,6 +46,10 @@ def sha(s):
     """
     return the sha-256 hash of `s`, in a url-safe base-64 encoding
     """
+    if isinstance(s, unicode):
+        # note: hasher.update secretly tries to encode s to ascii
+        # if it is unicode for some baffling reason
+        s = s.encode('utf-8')
     hasher = hashlib.sha256()
     hasher.update(s)
     digest = hasher.digest()
@@ -81,8 +87,19 @@ def cheddar():
     except:
         g.db = None
 
+    try:
+        with open(config.ZOO_GUESSLANG_PICKLE_PATH, 'r') as f:
+            g.language_guesser = pickle.load(f)
+    except:
+        g.language_guesser = None
+
 @my_flask.route('/new/<language>')
-def hello_world(language):
+def new_snippet(language):
+    """
+    :kind: user
+
+    Open the editor with a blank file with language `language`.
+    """
     return render_template(
         'edit.html',
         defaultLanguage=language,
@@ -140,6 +157,11 @@ def dynamic_cache(in_name, out_name, transformer):
 
 @my_flask.route('/dynamic/scss/<name>.css')
 def dynamic_css(name):
+    """
+    :kind: internal
+
+    Generate and cache CSS from `/templates/scss/<name>.scss`.
+    """
     return dynamic_cache(
         in_name = 'scss/{0}.scss'.format(name),
         out_name = 'scss/{0}.css'.format(name),
@@ -148,6 +170,11 @@ def dynamic_css(name):
 
 @my_flask.route('/dynamic/coffee/<name>.js')
 def dynamic_coffee(name):
+    """
+    :kind: internal
+
+    Generate and cache javascript from `/templates/coffee/<name>.coffee`.
+    """
     return dynamic_cache(
         in_name = 'coffee/{0}.coffee'.format(name),
         out_name = 'coffee/{0}.js'.format(name),
@@ -158,6 +185,13 @@ def dynamic_coffee(name):
 
 @my_flask.route('/fork/<id>')
 def fork(id):
+    """
+    :kind: user
+
+    Open snippet with id `id` in the editor. Subsequent saves
+    will record `id` as the predecessor. If `id` doesn't exist,
+    just ignore it and open a blank editor...
+    """
     snippet = g.db.snippets.find_one(id)
     if snippet is None:
         # blank
@@ -192,6 +226,11 @@ def get_excerpt(snippet_id):
 
 @my_flask.route('/treeoflife')
 def treeoflife():
+    """
+    :kind: debuggy
+
+    show the tree of life.
+    """
     tree = collections.defaultdict(list)
     for snippet in g.db.snippets.find():
         tree[snippet['predecessor']].append(str(snippet['_id']))
@@ -213,6 +252,12 @@ def shortenid(id):
 
 @my_flask.route('/history/<id>')
 def history(id):
+    """
+    :kind: internal
+
+    Returns an html snippet containing the history of snippet `id`.
+    """
+
     out = '<ul>'
     while id != '':
         out += '<li><a href="/fork/{0}">{1}</a></li>'.format(id, shortenid(id))
@@ -224,16 +269,133 @@ def history(id):
     out += '</ul>'
     return out
 
-@my_flask.route('/save', methods=['POST'])
-def save():
+
+def add_blob(data):
     blob = {
-        'data': request.form['source']
+        'data': data,
+        '_id': sha(data)
     }
 
-    blob['_id'] = sha(blob['data'])
+    # silently ignore duplicate keys (assuming that
+    # same hash => same object :/)
+    g.db.blobs.insert(blob, safe=False)
+
+    return blob['_id']
+
+@my_flask.route('/docs')
+def docs():
+    """
+    :kind: debuggy
+
+    Show all the routing rules on the webapp servery thingy, with docs.
+    """
+
+    rule_docs = {}
+    for rule in my_flask.url_map.iter_rules():
+        func = my_flask.view_functions[rule.endpoint]
+        rule_docs[rule.rule] = func.__doc__
+
+    return render_template('docs.html', rule_docs=rule_docs)
+
+
+@my_flask.route('/bookmarklet/<blob_id>/<language>')
+def bookmarklet(blob_id, language):
+    """
+    :kind: internal
+
+    create a new snippet from the blob at `blob_id` in language `language`
+    and open the editor there.
+    used by the bookmarklet.
+    """
 
     snippet = {
-        'blob_id': blob['_id'],
+        'blob_id': blob_id,
+        'language': language,
+        'driver': 'some_driver',
+        'predecessor': '',
+        'revision': now()
+    }
+
+    snippet['_id'] = sha(canonical_json(snippet))
+
+    # silently ignore duplicate keys (assuming that
+    # same hash => same object :/)
+    g.db.snippets.insert(snippet, safe=False)
+
+    return redirect(url_for('fork', id=snippet['_id']))
+    
+def decode(s, default='utf-8'):
+    try:
+        return s.decode(default)
+    except UnicodeError:
+        pass
+
+    encoding = chardet.detect(s)['encoding']
+    return s.decode(encoding)
+
+
+
+
+@my_flask.route('/import', methods=['POST'])
+def import_code():
+    """
+    :kind: API
+
+    Add a blob of code to the database.
+
+    Post parameters:
+    :source: (required) the code to import
+    :filename: (optional) original filename, also used to guess language
+    :language: (optional) source language, guessed if omitted
+
+    Returns a json object with these attributes:
+    :blob_id: id of generated blob
+    :language_guesses: if `language` wasn't given, a list of
+                       guesses based on `source` and possibly `filename`,
+                       with the most likely guess first
+
+    Notes:
+    - This doesn't actually create a snippet. Use `/save` for that.
+    """
+    
+    source = request.form['source']
+    blob_id = add_blob(source)
+    guesses = [
+        {'language': lang, 'confidence': confidence}
+        for confidence, lang in g.language_guesser.guesses(source)
+    ]
+
+    return jsonify(
+        blob_id=blob_id,
+        language_guesses=guesses
+    )
+
+@my_flask.route('/save', methods=['POST'])
+def save():
+    """
+    :kind: API
+
+    save a new snippet.
+
+    post parameters:
+    :source: source code to save
+    :language: source language
+    :driver: driver
+    :predecessor: snippet id
+    
+    returns a json object with these attributes:
+    :_id: snippet id
+    :blob_id: blob id
+    :language: language
+    :driver: driver
+    :predecessor: predecessor
+    :revision: time saved
+    """
+
+    blob_id = add_blob(request.form['source'])
+
+    snippet = {
+        'blob_id': blob_id,
         'language': request.form['language'],
         'driver': request.form['driver'],
         'predecessor': request.form['predecessor'],
@@ -244,14 +406,24 @@ def save():
 
     # silently ignore duplicate keys (assuming that
     # same hash => same object :/)
-
-    g.db.blobs.insert(blob, safe=False)
     g.db.snippets.insert(snippet, safe=False)
 
     return simplejson.dumps(snippet)
 
 @my_flask.route('/compile', methods=['POST'])
 def compile():
+    """
+    :kind: API
+
+    compile a snippet
+
+    post parameters
+    :id: snippet id to compile
+    
+    return a json object representing the protobuf output of the
+    compiler...
+    """
+
     print 'compile', request.form['id']
 
     snippet = g.db.snippets.find_one(
@@ -283,7 +455,10 @@ def compile():
 
     return simplejson.dumps(response_json)
 
-def make_bookmarklet(url):
+def make_bookmarklet(url, root=None):
+    if root is None:
+        root = request.url_root 
+
     source = '''
         (function() {
             var e = document.createElement('script'),
@@ -309,7 +484,7 @@ def make_bookmarklet(url):
 
     # .format() is a pain with a curly-bracket language like JS
     source = source.replace('{{url}}', url)
-    source = source.replace('{{root}}', request.url_root)
+    source = source.replace('{{root}}', root)
 
     # try to detect when the user needs to update their bookmark
     version = '0x{0:x}'.format(zlib.adler32(source) & 0xffffffff)
@@ -317,9 +492,32 @@ def make_bookmarklet(url):
 
     return 'javascript:' + source
                     
+@my_flask.route("/dynamic/zoo.user.js")
+def grease():
+    source = '''// ==UserScript==
+// @name zoo
+// @include *
+// @description zoo
+// ==/UserScript==
+
+location.assign('{{bookmarklet}};void(0);')'''
+
+    url = url_for('static', filename='js/bookmarklet.js', _external=True)
+    bookmarklet = make_bookmarklet(url)
+    bookmarklet = bookmarklet.replace('\'', '\\\'')
+    source = source.replace('{{bookmarklet}}', bookmarklet)
+
+    response = make_response(source)
+    response.mimetype = 'text/javascript'
+    return response
 
 @my_flask.route("/")
 def start():
+    """
+    :kind: usery
+
+    the home page
+    """
     url = url_for('static', filename='js/bookmarklet.js', _external=True)
     return render_template(
         "start.html",

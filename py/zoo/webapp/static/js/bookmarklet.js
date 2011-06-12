@@ -27,14 +27,12 @@
         var name = 'zooLink' // where we store the new element
         $('pre').hover(
             function() {
-                console.log('hover-in')
                 if (name in this) {
                     // this shouldn't happen...
                     console.log('problem...', this)
                 } else {
                     var that = this
                     this[name] = $('<a/>')
-                        .text('foo')
                         .addClass('zoo-bookmarklet-link')
                         .appendTo($(this))
                         .fadeIn('fast')
@@ -45,12 +43,58 @@
                         })
                         .text('run in zoo')
                         .click(function() {
-                            console.log(getText($(that), this))
+                            var result = $('<div/>')
+                                .addClass('zoo-bookmarklet-result')
+                                .appendTo($(that))
+                                .fadeIn('fast')
+                                .position({ of: $(that) })
+
+                            var throbber = $('<img/>')
+                                .attr('src', window.zooRoot + '/static/throbber.gif')
+                                .appendTo(result)
+                                .position({ of: $(result) })
+                            
+                            var rpc = new easyXDM.Rpc(
+                                {   
+                                    // easyXDM connection settings
+                                    remote: window.zooRoot + '/static/bookmarklet.html',
+                                    container: result.get()[0]
+                                },
+                                {
+                                    // rpc definitions
+                                    remote: {
+                                        upload: {}
+                                    },
+                                    local: {
+                                        resize: function (width, height) {
+                                            $('iframe', result).css({
+                                                width: width,
+                                                height: height
+                                            })
+                                            result.animate({
+                                                width: width,
+                                                height: height
+                                            }, {
+                                                step: function() {
+                                                    result.position({ of: $(that) })
+                                                }
+                                            })
+                                        },
+                                        hideThrobber: function() {
+                                            throbber.fadeOut('fast').remove()
+                                        }
+                                    }
+                                }
+                            )
+
+        
+        
+                            rpc.upload(window.zooRoot, getText($(that), this))
+                            
                         })
                 }                
             },
             function() {
-                console.log('hover-out')
                 if (name in this) {
                     this[name].fadeOut('fast').remove()
                     delete this[name]
@@ -92,7 +136,8 @@
     addScripts(
         [
             'http://code.jquery.com/jquery-1.6.1.min.js',
-            'http://code.jquery.com/ui/1.8.13/jquery-ui.min.js'
+            'http://code.jquery.com/ui/1.8.13/jquery-ui.min.js',
+            window.zooRoot + '/static/js/easyXDM.js'
         ],
         function() {
             main(jQuery)

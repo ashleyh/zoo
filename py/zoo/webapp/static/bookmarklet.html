@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+    <head>
+        <script type="text/javascript" src="/static/js/jquery.js"></script>
+        <script type="text/javascript" src="/static/js/easyXDM.js"></script>
+        <script type="text/javascript">
+            function percent(x) {
+                return Math.round(x*100) + "%"
+            }
+
+            $(function() {
+                var rpc = new easyXDM.Rpc(
+                    {},
+                    {
+                        local: {
+                            upload: function(zooRoot, source) {
+                                $.post(
+                                    '/import',
+                                    { source: source },
+                                    function (data, textStatus) {
+                                        for (var i in data.language_guesses) {
+                                            var guess = data.language_guesses[i]
+                                            if (guess.confidence < 0.01)
+                                                continue;
+
+
+                                            var li = $('<li/>')
+                                                .appendTo($('ul'))
+                                            $('<a/>')
+                                                .text(guess.language + " (" + percent(guess.confidence) + ")" )
+                                                .attr('href', '/bookmarklet/' + data.blob_id + '/' + guess.language)
+                                                .attr('target', '_blank')
+                                                .appendTo(li)
+                                        }
+                                    }
+                                )
+                                refit()
+                            }
+                        },
+                        remote: {
+                            resize: {},
+                            hideThrobber: {}
+                        }
+                    }
+                )
+                var refit = function() {
+                    var body = $('body').get()[0]
+                    rpc.resize(body.scrollWidth, body.scrollHeight)
+                }
+                rpc.hideThrobber()
+                refit()
+            })
+        </script>
+    </head>
+    <body>
+        which language was it?
+        <ul></ul>
+    </body>
+</html>
+

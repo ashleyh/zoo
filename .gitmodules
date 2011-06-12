@@ -4,3 +4,6 @@
 [submodule "py/zoo/webapp/static/js/ext/jquery"]
 	path = py/zoo/webapp/static/js/ext/jquery
 	url = https://github.com/jquery/jquery.git
+[submodule "py/zoo/guesslang"]
+	path = py/zoo/guesslang
+	url = https://github.com/adgcfad/guesslang.git

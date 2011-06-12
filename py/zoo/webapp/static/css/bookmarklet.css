@@ -11,3 +11,18 @@
     width: 80px;
     text-align: center;
 }
+
+.zoo-bookmarklet-result  {
+    position: absolute;
+    font-family: sans-serif;
+    padding: 3px;
+    -moz-border-radius: 3px;
+    -webkit-border-radius: 3px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+    background-image: -moz-linear-gradient(top, #eeeeee, #cccccc);
+    background-image: -webkit-gradient(linear,left top,left bottom,color-stop(0, #eeeeee),color-stop(1, #cccccc));    
+    width: 32px;
+    height: 32px;
+    text-align: center;
+}

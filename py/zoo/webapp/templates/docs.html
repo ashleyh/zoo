@@ -1,0 +1,6 @@
+<h3>docs for the web interface</h3>
+
+{% for rule, doc in rule_docs.items(): %}
+<h4>{{ rule|escape }}</h4>
+<pre>{{ doc|escape }}</pre>
+{% endfor %}
